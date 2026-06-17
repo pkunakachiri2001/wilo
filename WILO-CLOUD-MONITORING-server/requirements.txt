@@ -1,0 +1,11 @@
+Flask==2.3.3
+Flask-SocketIO==5.3.6
+flask-cors>=4.0.0
+numpy>=1.26.0
+scipy>=1.11.4
+watchdog==3.0.0
+python-socketio==5.8.0
+python-engineio==4.7.1
+gunicorn==21.2.0
+python-dotenv==1.0.0
+psycopg2-binary>=2.9.0

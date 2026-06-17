@@ -1,0 +1,43 @@
+# Data and Environment
+Data/
+data/
+Events/
+WILO-CLOUD-MONITORING-server/Data/
+WILO-CLOUD-MONITORING-server/Events/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.local
+*.log
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Test data generator
+Data/
+
+# Node modules
+node_modules/
+
+# IDE and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+.env.production

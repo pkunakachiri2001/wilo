@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WILO Cloud Monitoring — Algorithms & Mathematical Reference</title>
+  <!-- MathJax for proper mathematical typesetting -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']],
+        tags: 'ams'
+      },
+      options: { skipHtmlTags: ['script','noscript','style','textarea','pre'] }
+    };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:    #1a3a6b;
+      --accent:  #0066cc;
+      --light:   #e8f0fb;
+      --border:  #c2d0e8;
+      --text:    #1a1a2e;
+      --sub:     #4a5568;
+      --bg:      #ffffff;
+      --tabbg:   #f0f4ff;
+    }
+
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 11pt;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+      padding: 20mm 20mm 20mm 25mm;
+      max-width: 210mm;
+      margin: 0 auto;
+    }
+
+    /* ── Cover Page ── */
+    .cover {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 90vh;
+      text-align: center;
+      page-break-after: always;
+      border: 3px solid var(--blue);
+      padding: 40px;
+      background: linear-gradient(160deg, #f0f4ff 0%, #ffffff 100%);
+    }
+    .cover-logo {
+      font-size: 48pt;
+      font-weight: 900;
+      color: var(--blue);
+      letter-spacing: 6px;
+      margin-bottom: 8px;
+    }
+    .cover-sub {
+      font-size: 14pt;
+      color: var(--accent);
+      margin-bottom: 30px;
+      font-variant: small-caps;
+      letter-spacing: 2px;
+    }
+    .cover h1 {
+      font-size: 22pt;
+      color: var(--blue);
+      font-weight: 700;
+      margin-bottom: 12px;
+      line-height: 1.3;
+    }
+    .cover h2 {
+      font-size: 14pt;
+      color: var(--sub);
+      font-weight: normal;
+      font-style: italic;
+      margin-bottom: 40px;
+    }
+    .cover-divider {
+      width: 80px;
+      height: 3px;
+      background: var(--accent);
+      margin: 20px auto;
+    }
+    .cover-meta {
+      font-size: 10pt;
+      color: var(--sub);
+      margin-top: 40px;
+    }
+
+    /* ── Table of Contents ── */
+    .toc { page-break-after: always; }
+    .toc h2 { color: var(--blue); font-size: 16pt; border-bottom: 2px solid var(--border); padding-bottom: 6px; margin-bottom: 16px; }
+    .toc ol { padding-left: 20px; }
+    .toc li { margin: 5px 0; font-size: 11pt; }
+    .toc a { color: var(--accent); text-decoration: none; }
+
+    /* ── Section Headings ── */
+    h1.section {
+      font-size: 18pt;
+      color: var(--blue);
+      border-bottom: 3px solid var(--blue);
+      padding-bottom: 6px;
+      margin: 30px 0 14px;
+      page-break-before: always;
+    }
+    h1.section:first-of-type { page-break-before: avoid; }
+
+    h2.subsection {
+      font-size: 14pt;
+      color: var(--blue);
+      border-left: 4px solid var(--accent);
+      padding-left: 10px;
+      margin: 22px 0 10px;
+    }
+
+    h3.subsubsection {
+      font-size: 12pt;
+      color: var(--accent);
+      margin: 16px 0 8px;
+      font-style: italic;
+    }
+
+    /* ── Paragraphs ── */
+    p { margin: 8px 0; text-align: justify; }
+
+    /* ── Equation Box ── */
+    .eq-box {
+      background: var(--tabbg);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      padding: 14px 18px;
+      margin: 14px 0;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .eq-label {
+      font-size: 9pt;
+      color: var(--sub);
+      font-style: italic;
+      margin-top: 4px;
+    }
+
+    /* ── Info Box ── */
+    .info-box {
+      background: #fff8e1;
+      border: 1px solid #f0c040;
+      border-left: 4px solid #e6a800;
+      padding: 10px 14px;
+      margin: 12px 0;
+      border-radius: 4px;
+      font-size: 10pt;
+    }
+    .note-box {
+      background: #e8f5e9;
+      border: 1px solid #81c784;
+      border-left: 4px solid #388e3c;
+      padding: 10px 14px;
+      margin: 12px 0;
+      border-radius: 4px;
+      font-size: 10pt;
+    }
+
+    /* ── Tables ── */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 14px 0;
+      font-size: 10pt;
+    }
+    thead tr { background: var(--blue); color: #fff; }
+    thead th { padding: 8px 10px; text-align: left; font-weight: 600; }
+    tbody tr:nth-child(even) { background: var(--tabbg); }
+    tbody td { padding: 7px 10px; border-bottom: 1px solid var(--border); }
+
+    /* ── Lists ── */
+    ul, ol { padding-left: 22px; margin: 8px 0; }
+    li { margin: 4px 0; }
+
+    /* ── Inline code ── */
+    code { font-family: 'Courier New', monospace; background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 10pt; }
+
+    /* ── Print settings ── */
+    @media print {
+      body { padding: 15mm 15mm 15mm 20mm; }
+      .cover { min-height: 260mm; }
+      h1.section { page-break-before: always; }
+      .eq-box, .info-box, .note-box, table { page-break-inside: avoid; }
+    }
+
+    /* ── Fault stage bars ── */
+    .stage-bar {
+      display: flex;
+      gap: 2px;
+      margin: 8px 0;
+      height: 22px;
+    }
+    .stage-bar div {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8pt;
+      color: #fff;
+      font-weight: bold;
+      border-radius: 3px;
+    }
+    .s1 { background: #4caf50; flex: 3; }
+    .s2 { background: #ff9800; flex: 5; }
+    .s3 { background: #f44336; flex: 4; }
+    .s4 { background: #7b1fa2; flex: 3; }
+    .s-sudden { background: #1565c0; flex: 10; }
+    .s-fail   { background: #b71c1c; flex: 2; }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════
+     COVER PAGE
+════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-logo">WILO</div>
+  <div class="cover-sub">Cloud Monitoring System</div>
+  <div class="cover-divider"></div>
+  <h1>Algorithms &amp; Mathematical Reference</h1>
+  <h2>Signal Processing · Fault Physics · Feature Extraction</h2>
+  <div class="cover-divider"></div>
+  <div class="cover-meta">
+    <strong>System:</strong> Wilo Pump-Motor Unit — 50 Hz European Grid<br/>
+    <strong>Motor:</strong> 8-pole induction, 730 RPM rated<br/>
+    <strong>Pump:</strong> 5-vane centrifugal, 12.17 Hz shaft<br/>
+    <strong>Sensors:</strong> Accelerometer · Current CT · Audio microphone<br/>
+    <strong>Sampling:</strong> 700 Hz · 1400 samples per 2-second window
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     TABLE OF CONTENTS
+════════════════════════════════════════════════════ -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#s1">System Parameters &amp; Machine Constants</a></li>
+    <li><a href="#s2">Signal Acquisition &amp; Sampling</a></li>
+    <li><a href="#s3">Statistical Feature Extraction</a></li>
+    <li><a href="#s4">Spectral Analysis — FFT Algorithm</a></li>
+    <li><a href="#s5">Impact Response Physics Models</a></li>
+    <li><a href="#s6">Fault Generators — Mathematical Models</a>
+      <ol>
+        <li><a href="#s6-1">Motor Bearing Failure (4-Stage ISO 13373-3)</a></li>
+        <li><a href="#s6-2">Motor Electrical Fault (Phase Imbalance)</a></li>
+        <li><a href="#s6-3">Motor Overheating (Thermal Degradation)</a></li>
+        <li><a href="#s6-4">Motor Shaft Misalignment</a></li>
+        <li><a href="#s6-5">Motor Stall (Locked-Rotor)</a></li>
+        <li><a href="#s6-6">Motor Vibration Anomaly (3 Sub-types)</a></li>
+        <li><a href="#s6-7">Motor Winding Failure (Insulation Breakdown)</a></li>
+        <li><a href="#s6-8">Pump Cavitation (Rayleigh Collapse)</a></li>
+        <li><a href="#s6-9">Pump Impeller Damage (Hydraulic Imbalance)</a></li>
+        <li><a href="#s6-10">Pump Seal Leakage (Turbulent Leak)</a></li>
+      </ol>
+    </li>
+    <li><a href="#s7">Deviation Scoring &amp; Fault Severity</a></li>
+    <li><a href="#s8">Parameter Weights per Fault Type</a></li>
+    <li><a href="#s9">Fault Frequency Reference Table</a></li>
+  </ol>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 1 — SYSTEM PARAMETERS
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s1">1. System Parameters &amp; Machine Constants</h1>
+
+<p>All signal models are grounded in the physical geometry of the Wilo pump-motor unit operating on a 50 Hz European power grid. The following constants are used throughout every fault generator.</p>
+
+<h2 class="subsection">1.1 Motor &amp; Shaft Frequencies</h2>
+
+<div class="eq-box">
+  <strong>Synchronous speed (8-pole, 50 Hz):</strong><br/>
+  \[ n_{sync} = \frac{120 \cdot f_{line}}{p} = \frac{120 \times 50}{8} = 750 \text{ RPM} \]
+  <br/>
+  <strong>Rated shaft frequency (with slip):</strong><br/>
+  \[ f_{shaft} = \frac{n_{rated}}{60} = \frac{730}{60} \approx 12.17 \text{ Hz} \]
+  <div class="eq-label">where \(p = 8\) poles, \(f_{line} = 50\) Hz, rated speed ≈ 730 RPM</div>
+</div>
+
+<div class="eq-box">
+  <strong>Line harmonics (50 Hz system):</strong><br/>
+  \[ f_{1\times} = 50 \text{ Hz},\quad f_{2\times} = 100 \text{ Hz},\quad f_{3\times} = 150 \text{ Hz},\quad f_{5\times} = 250 \text{ Hz} \]
+</div>
+
+<h2 class="subsection">1.2 Bearing Defect Frequencies</h2>
+
+<p>For a 6-ball bearing with pitch diameter \(D = 50\) mm, ball diameter \(d = 10\) mm, and contact angle \(\alpha = 15°\):</p>
+
+<div class="eq-box">
+  <strong>Ball Pass Frequency — Outer Race (BPFO):</strong><br/>
+  \[
+    \text{BPFO} = \frac{N_b}{2} \cdot f_{shaft} \cdot \left(1 - \frac{d}{D}\cos\alpha\right)
+    = \frac{6}{2} \times 12.17 \times \left(1 - \frac{10}{50}\cos 15°\right) \approx 29.4 \text{ Hz}
+  \]
+  <br/>
+  <strong>Ball Pass Frequency — Inner Race (BPFI):</strong><br/>
+  \[
+    \text{BPFI} = \frac{N_b}{2} \cdot f_{shaft} \cdot \left(1 + \frac{d}{D}\cos\alpha\right)
+    \approx 43.6 \text{ Hz}
+  \]
+  <br/>
+  <strong>Ball Spin Frequency (BSF):</strong><br/>
+  \[
+    \text{BSF} = \frac{D}{2d} \cdot f_{shaft} \cdot \left[1 - \left(\frac{d}{D}\cos\alpha\right)^2\right]
+    \approx 11.8 \text{ Hz}
+  \]
+  <div class="eq-label">\(N_b = 6\) balls, \(D = 50\) mm pitch diameter, \(d = 10\) mm ball diameter, \(\alpha = 15°\) contact angle</div>
+</div>
+
+<h2 class="subsection">1.3 Pump Blade-Pass Frequency</h2>
+
+<div class="eq-box">
+  <strong>Blade-Pass Frequency (BPF):</strong><br/>
+  \[
+    \text{BPF} = N_{vanes} \times f_{shaft} = 5 \times 12.17 \approx 60.8 \text{ Hz}
+  \]
+  <div class="eq-label">5-vane centrifugal impeller; each vane generates one pressure pulse per revolution</div>
+</div>
+
+<h2 class="subsection">1.4 Nominal Operating Values</h2>
+
+<table>
+  <thead>
+    <tr><th>Parameter</th><th>Symbol</th><th>Value</th><th>Units</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Motor full-load current</td><td>\(I_{FLA}\)</td><td>18.0</td><td>A</td></tr>
+    <tr><td>Healthy vibration RMS</td><td>\(a_{nom}\)</td><td>0.5</td><td>m/s²</td></tr>
+    <tr><td>Normal sound level</td><td>\(L_{nom}\)</td><td>88.0</td><td>dB SPL</td></tr>
+    <tr><td>Structural natural frequency</td><td>\(\omega_n\)</td><td>\(2\pi \times 1500\)</td><td>rad/s</td></tr>
+    <tr><td>Structural damping ratio</td><td>\(\zeta\)</td><td>0.08</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h2 class="subsection">1.5 Load Factor</h2>
+
+<p>Each generator run randomly samples a load factor to represent different operating conditions:</p>
+<div class="eq-box">
+  \[ \lambda_{load} \sim \mathcal{U}(0.60,\; 1.10) \]
+  <div class="eq-label">Uniform distribution over 60%–110% of rated load. Applied multiplicatively to all nominal current and acceleration values.</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 2 — SIGNAL ACQUISITION
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s2">2. Signal Acquisition &amp; Sampling</h1>
+
+<h2 class="subsection">2.1 Acquisition Window</h2>
+
+<table>
+  <thead>
+    <tr><th>Parameter</th><th>Value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Sampling rate \(f_s\)</td><td>700 Hz</td></tr>
+    <tr><td>Window duration \(T\)</td><td>2 s</td></tr>
+    <tr><td>Samples per window \(N\)</td><td>\(700 \times 2 = 1400\)</td></tr>
+    <tr><td>Sample interval \(\Delta t\)</td><td>\(1/700 \approx 1.43\) ms</td></tr>
+    <tr><td>Frequency resolution \(\Delta f\)</td><td>\(1/T = 0.5\) Hz</td></tr>
+    <tr><td>Nyquist frequency</td><td>\(f_s / 2 = 350\) Hz</td></tr>
+  </tbody>
+</table>
+
+<div class="eq-box">
+  <strong>Discrete time array:</strong><br/>
+  \[
+    t_k = \frac{k}{f_s}, \quad k = 0, 1, 2, \ldots, N-1, \quad t_k \in [0,\; T)
+  \]
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 3 — STATISTICAL FEATURES
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s3">3. Statistical Feature Extraction</h1>
+
+<p>The following 11 statistical features are computed for every sensor channel (acceleration, current, audio) at every recording interval. Let \(\mathbf{x} = [x_1, x_2, \ldots, x_N]\) be a cleaned signal vector (NaN and ±∞ removed).</p>
+
+<h2 class="subsection">3.1 Central Tendency</h2>
+
+<div class="eq-box">
+  <strong>Mean:</strong><br/>
+  \[ \mu = \bar{x} = \frac{1}{N} \sum_{k=1}^{N} x_k \]
+  <br/>
+  <strong>Median:</strong>
+  \[ \tilde{x} = \text{middle value of the sorted sequence } x_{(1)} \leq x_{(2)} \leq \cdots \leq x_{(N)} \]
+</div>
+
+<h2 class="subsection">3.2 Dispersion</h2>
+
+<div class="eq-box">
+  <strong>Standard Deviation:</strong><br/>
+  \[ \sigma = \sqrt{\frac{1}{N} \sum_{k=1}^{N} (x_k - \bar{x})^2} \]
+  <br/>
+  <strong>Variance:</strong><br/>
+  \[ \sigma^2 = \frac{1}{N} \sum_{k=1}^{N} (x_k - \bar{x})^2 \]
+  <br/>
+  <strong>Range:</strong><br/>
+  \[ R = x_{max} - x_{min} = \max_k(x_k) - \min_k(x_k) \]
+</div>
+
+<h2 class="subsection">3.3 Energy & Amplitude Metrics</h2>
+
+<div class="eq-box">
+  <strong>Root-Mean-Square (RMS):</strong><br/>
+  \[
+    x_{RMS} = \sqrt{\frac{1}{N} \sum_{k=1}^{N} x_k^2}
+  \]
+  <div class="eq-label">RMS represents the effective energy content of the signal. For a pure sine wave, \(x_{RMS} = A/\sqrt{2}\) where \(A\) is the peak amplitude.</div>
+  <br/>
+  <strong>Peak Value:</strong><br/>
+  \[
+    x_{peak} = \max_{k} |x_k|
+  \]
+</div>
+
+<div class="eq-box">
+  <strong>Crest Factor:</strong><br/>
+  \[
+    CF = \frac{x_{peak}}{x_{RMS}}
+  \]
+  <div class="eq-label">Crest factor measures the ratio of peak amplitude to RMS. A pure sine wave has CF = √2 ≈ 1.414. 
+  Early bearing faults increase CF significantly (CF > 5) because isolated impulses raise the peak without yet raising the RMS. 
+  At late-stage failure, as RMS grows rapidly, CF may fall back toward lower values.</div>
+</div>
+
+<div class="eq-box">
+  <strong>Load Factor (operating point scalar):</strong><br/>
+  \[
+    \lambda_{load} = \frac{\text{actual operating load}}{\text{rated full load}} \in [0.60,\; 1.10]
+  \]
+  <div class="eq-label">Stored as a metadata scalar, not computed from the signal. Randomised per run to ensure ML training coverage across operating conditions.</div>
+</div>
+
+<h2 class="subsection">3.4 Shape Metrics (Higher-Order Statistics)</h2>
+
+<div class="eq-box">
+  <strong>Skewness (Fisher's moment coefficient):</strong><br/>
+  \[
+    \gamma_1 = \frac{1}{N} \sum_{k=1}^{N} \left(\frac{x_k - \bar{x}}{\sigma}\right)^3
+  \]
+  <div class="eq-label">
+    \(\gamma_1 = 0\) for a symmetric distribution (Gaussian, pure sine).
+    Positive skewness → tail on the right (impulsive positive spikes).
+    Negative skewness → tail on the left. 
+    Bearing faults and electrical arc transients drive |γ₁| upward.
+  </div>
+  <br/>
+  <strong>Excess Kurtosis (Fisher's definition):</strong><br/>
+  \[
+    \gamma_2 = \frac{1}{N} \sum_{k=1}^{N} \left(\frac{x_k - \bar{x}}{\sigma}\right)^4 - 3
+  \]
+  <div class="eq-label">
+    \(\gamma_2 = 0\) for a Gaussian signal (excess kurtosis = 0, absolute kurtosis = 3).
+    Impulse events (bearing impacts, arc discharges) produce heavy tails → high kurtosis.<br/>
+    <strong>Bearing fault kurtosis profile:</strong><br/>
+    Stage 1: \(\gamma_2 \approx 0\) (Gaussian noise only)<br/>
+    Stage 2: \(\gamma_2\) rises to 12–15 (isolated BPFO transients)<br/>
+    Stage 3: \(\gamma_2\) peaks ~25 then drops as damage spreads<br/>
+    Stage 4: \(\gamma_2\) = 3–5, but RMS grows 5–6× (widespread spall)
+  </div>
+</div>
+
+<h2 class="subsection">3.5 Complete Feature Vector</h2>
+
+<p>For each sensor \(s \in \{\text{acceleration, current, audio}\}\) and each mode \(m \in \{\text{max, min, combined}\}\), the stored feature vector is:</p>
+
+<div class="eq-box">
+  \[
+    \mathbf{f}_{s,m} = \left[\mu,\; \tilde{x},\; \sigma,\; \sigma^2,\; x_{min},\; x_{max},\; R,\; x_{RMS},\; x_{peak},\; \gamma_1,\; \gamma_2,\; CF,\; \lambda_{load}\right]
+  \]
+  <div class="eq-label">13 features × 3 sensors × 3 modes = up to 117 statistical features per interval, plus 5 top FFT peaks per sensor (15 frequency + 15 amplitude values).</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 4 — FFT ALGORITHM
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s4">4. Spectral Analysis — FFT Algorithm</h1>
+
+<h2 class="subsection">4.1 Hann-Windowed FFT</h2>
+
+<p>Raw FFT without windowing suffers from spectral leakage — energy from a pure tone "bleeds" into neighbouring frequency bins, masking fault signatures. The Hann window eliminates this.</p>
+
+<div class="eq-box">
+  <strong>Step 1 — Mean removal (DC suppression):</strong><br/>
+  \[ z_k = x_k - \bar{x} \]
+  <br/>
+  <strong>Step 2 — Hann window:</strong><br/>
+  \[ w_k = \frac{1}{2}\left[1 - \cos\!\left(\frac{2\pi k}{N-1}\right)\right], \quad k = 0, 1, \ldots, N-1 \]
+  \[ \tilde{z}_k = z_k \cdot w_k \]
+  <br/>
+  <strong>Step 3 — Real FFT (single-sided spectrum):</strong><br/>
+  \[ \hat{Z}[n] = \sum_{k=0}^{N-1} \tilde{z}_k \cdot e^{-j2\pi kn/N}, \quad n = 0, 1, \ldots, \tfrac{N}{2} \]
+  <br/>
+  <strong>Frequency axis:</strong><br/>
+  \[ f_n = \frac{n \cdot f_s}{N}, \quad n = 0, 1, \ldots, \tfrac{N}{2} \]
+  <br/>
+  <strong>Step 4 — Normalised single-sided amplitude:</strong><br/>
+  \[
+    A[n] = \frac{2}{\sum_{k=0}^{N-1} w_k} \cdot |\hat{Z}[n]|
+  \]
+  <div class="eq-label">
+    Factor of 2 accounts for the discarded negative-frequency half.
+    Dividing by the window sum (not by N) ensures the amplitude of a tone is the same regardless of window shape. 
+    For \(N = 1400\) and Hann window: \(\sum w_k \approx 700\), so the normalisation factor is \(2/700 \approx 2.86 \times 10^{-3}\).
+  </div>
+</div>
+
+<h2 class="subsection">4.2 Peak Detection</h2>
+
+<div class="eq-box">
+  <strong>Valid frequency range:</strong><br/>
+  \[ \mathcal{F}_{valid} = \{f_n : f_n \geq 5.0 \text{ Hz}\} \]
+  <div class="eq-label">Frequencies below 5 Hz are excluded to suppress DC bias bleed and sub-rotation thermal drift.</div>
+  <br/>
+  <strong>Minimum peak separation:</strong><br/>
+  \[
+    \Delta f_{min} = 2.5 \text{ Hz} \quad \Rightarrow \quad d_{bins} = \left\lfloor \frac{\Delta f_{min}}{\Delta f} \right\rfloor = \left\lfloor \frac{2.5}{0.5} \right\rfloor = 5 \text{ bins}
+  \]
+  <div class="eq-label">Prevents adjacent-bin duplicates caused by smearing of a true single-frequency peak across 2–3 bins.</div>
+  <br/>
+  <strong>Top-5 peaks returned:</strong><br/>
+  \[
+    \{(f^*_1, A^*_1),\; (f^*_2, A^*_2),\; \ldots,\; (f^*_5, A^*_5)\}
+  \]
+  where peaks are sorted by amplitude descending: \(A^*_1 \geq A^*_2 \geq \cdots \geq A^*_5\).
+</div>
+
+<h2 class="subsection">4.3 Full-Spectrum Downsampling</h2>
+
+<p>For frontend charts, the full spectrum (up to 350 bins above 5 Hz) is compressed to 500 output points using maximum-in-bucket aggregation:</p>
+
+<div class="eq-box">
+  \[
+    b = \frac{|\mathcal{F}_{valid}|}{500}, \quad
+    (f_{out}^{(i)},\; A_{out}^{(i)}) = \arg\max_{f_n \in \text{bucket}_i}\; A[n]
+  \]
+  <div class="eq-label">Maximum-in-bucket preserves spectral peaks; a stride-based approach would randomly alias peaks away. This guarantees fault-frequency peaks are always visible in the frontend chart.</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 5 — IMPACT RESPONSE PHYSICS
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s5">5. Impact Response Physics Models</h1>
+
+<p>Mechanical and electrical impulse events (bearing impacts, arc discharges, bubble collapses) excite structural resonances. The system response to a single impulse is modelled as a <strong>damped sinusoidal decay</strong>.</p>
+
+<h2 class="subsection">5.1 Single Damped Impact Response</h2>
+
+<div class="eq-box">
+  <strong>Damped natural frequency:</strong><br/>
+  \[ \omega_d = \omega_n \sqrt{1 - \zeta^2} \]
+  <br/>
+  <strong>Response to a single impulse at time \(t_{imp}\):</strong><br/>
+  \[
+    x(t) = \begin{cases}
+      A \cdot e^{-\zeta \omega_n (t - t_{imp})} \cdot \sin\!\bigl[\omega_d (t - t_{imp})\bigr] & t \geq t_{imp} \\
+      0 & t < t_{imp}
+    \end{cases}
+  \]
+  <div class="eq-label">
+    \(A\) = impact amplitude (units of signal, e.g. m/s²),\quad
+    \(\omega_n\) = undamped natural frequency (rad/s),\quad
+    \(\zeta\) = damping ratio (\(0 < \zeta < 1\)).<br/>
+    For the motor steel frame: \(\omega_n = 2\pi \times 1500\) rad/s, \(\zeta = 0.08\).
+  </div>
+</div>
+
+<h2 class="subsection">5.2 Periodic Impact Train</h2>
+
+<p>Bearing defects and blade-pass events produce a <strong>periodic train</strong> of impacts. Real machinery exhibits log-normally distributed impact amplitudes and small timing jitter:</p>
+
+<div class="eq-box">
+  <strong>Impact train signal:</strong><br/>
+  \[
+    x_{train}(t) = \sum_{k=0}^{\infty} A_k \cdot e^{-\zeta\omega_n(t - t_k)} \sin[\omega_d(t - t_k)] \cdot \mathbf{1}(t \geq t_k)
+  \]
+  <br/>
+  <strong>Impact amplitudes (log-normal):</strong><br/>
+  \[
+    A_k \sim \text{LogNormal}(\ln \bar{A},\; \sigma_A^2) \quad \Rightarrow \quad A_k > 0 \text{ always}
+  \]
+  <div class="eq-label">Log-normal is used because impact energy is always positive and naturally right-skewed — consistent with real bearing data.</div>
+  <br/>
+  <strong>Impact timing with jitter:</strong><br/>
+  \[
+    t_k = k \cdot T_{impact} + \epsilon_k, \quad
+    \epsilon_k \sim \mathcal{U}(-\eta \cdot T_{impact},\; +\eta \cdot T_{impact})
+  \]
+  <div class="eq-label">
+    \(T_{impact} = 1/f_{impact}\) is the nominal period (e.g. \(1/\text{BPFO} \approx 34\) ms).<br/>
+    \(\eta = 0.05\) = jitter fraction (5% of period) simulates realistic shaft speed fluctuation.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 6 — FAULT GENERATORS
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s6">6. Fault Generators — Mathematical Models</h1>
+
+<!-- ── 6.1 BEARING FAILURE ── -->
+<h2 class="subsection" id="s6-1">6.1 Motor Bearing Failure — ISO 13373-3 Four-Stage Model</h2>
+
+<p>Bearing degradation follows the ISO 13373-3 four-stage progressive damage model. Each run randomises the failure interval \(n^* \in [12, 15]\) intervals to generate varied training data.</p>
+
+<div class="stage-bar">
+  <div class="s1">Stage 1<br/>Incipient</div>
+  <div class="s2">Stage 2<br/>Minor Wear</div>
+  <div class="s3">Stage 3<br/>Moderate</div>
+  <div class="s4">Stage 4<br/>Critical</div>
+  <div class="s-fail">✗</div>
+</div>
+
+<h3 class="subsubsection">Stage Boundaries</h3>
+
+<div class="eq-box">
+  Let \(\phi = n / n^*\) (normalised interval fraction, \(0 \leq \phi \leq 1\)):
+  \[
+    \text{Stage} = \begin{cases}
+      1 & 0 \leq \phi \leq 0.25 \\
+      2 & 0.25 < \phi \leq 0.55 \\
+      3 & 0.55 < \phi \leq 0.82 \\
+      4 & 0.82 < \phi \leq 1.0 \;\text{(system failure at } \phi = 1)
+    \end{cases}
+  \]
+  <br/>
+  <strong>Severity index (0 → 1 across Stages 2–4):</strong><br/>
+  \[
+    s = \text{clip}\!\left(\frac{\phi - 0.25}{0.75},\; 0,\; 1\right)
+  \]
+</div>
+
+<h3 class="subsubsection">Acceleration Signal Model</h3>
+
+<div class="eq-box">
+  <strong>Baseline (all stages):</strong><br/>
+  \[
+    x_{base}(t) = a_{nom}\lambda_{load}(1 + 0.15s) + 0.15\,a_{nom}\lambda_{load}\sin(2\pi f_{shaft} t) + \varepsilon_b(t)
+  \]
+  \[ \varepsilon_b \sim \mathcal{N}(0,\; [0.04\,a_{nom}\lambda_{load} + 0.02s]^2) \]
+  <br/>
+  <strong>Stage 2 — BPFO outer-race impacts:</strong><br/>
+  \[
+    x_{accel}(t) = x_{base}(t) + x_{train}(t;\; \text{BPFO},\; A_{BPFO}) + M_{shaft}(t)\cdot x_{train}(t;\; \text{BPFI},\; A_{BPFI})
+  \]
+  \[
+    A_{BPFO} = (0.3 + 1.5\phi_2)\lambda_{load}, \quad A_{BPFI} = 0.15\phi_2\lambda_{load}
+  \]
+  where \(\phi_2 = ({\phi - 0.25})/({0.30})\) is Stage-2 local progress, and
+  \[
+    M_{shaft}(t) = 0.5 + 0.5\left|\sin(\pi f_{shaft} t)\right|
+  \]
+  is the shaft-rate amplitude modulation of the inner-race impact train.
+  <br/><br/>
+  <strong>Stage 3 — Peak then declining amplitude:</strong><br/>
+  \[
+    A_{BPFO} = (2.5 - 0.8\phi_3)\lambda_{load}, \quad A_{BPFI} = (2.0 - 0.6\phi_3)\lambda_{load}
+  \]
+  \[
+    \varepsilon_{floor} \sim \mathcal{N}(0,\; [0.3 + 1.2\phi_3]^2) \quad \text{(rising noise floor)}
+  \]
+  <br/>
+  <strong>Stage 4 (system failure) — Widespread spall:</strong><br/>
+  \[
+    x_{accel}(t) = x_{train}(t;\;\text{BPFO},\; 5.5a_{nom}\lambda_{load}\cdot 0.6,\; \sigma_A = 0.6)
+                 + x_{train}(t;\;\text{BPFI},\; 5.5a_{nom}\lambda_{load}\cdot 0.5,\; \sigma_A = 0.6)
+                 + \mathcal{N}(0,\; [5.5a_{nom}\lambda_{load}\cdot 0.35]^2)
+  \]
+</div>
+
+<h3 class="subsubsection">Current Signal Model (Bearing)</h3>
+
+<div class="eq-box">
+  Bearing friction increases mechanical slip → slight current rise.<br/><br/>
+  <strong>Pre-failure (gradual):</strong>
+  \[
+    i(t) = I_{FLA}\lambda_{load}(1 + 0.05s) + \mathcal{N}(0,\; [I_{FLA}\lambda_{load}\cdot 0.02]^2)
+  \]
+  <strong>Stage 4 (seized bearing — locked rotor attempt):</strong>
+  \[
+    i(t) = I_{FLA}\lambda_{load}\cdot 4.5 + \mathcal{N}(0,\; 2.0^2), \quad i(t) \in [40,\; 120] \text{ A}
+  \]
+</div>
+
+<!-- ── 6.2 ELECTRICAL FAULT ── -->
+<h2 class="subsection" id="s6-2">6.2 Motor Electrical Fault — Phase Imbalance</h2>
+
+<p>Phase imbalance and line-to-ground faults create slip sidebands and a growing 2× line harmonic in vibration. Arc transients are modelled as damped sinusoidal impulses.</p>
+
+<div class="eq-box">
+  <strong>Slip frequency:</strong><br/>
+  \[ s_{pct} \sim \mathcal{U}(0.02,\; 0.06) \quad (2\text{–}6\% \text{ slip}) \]
+  \[ f_{slip} = s_{pct} \times f_{line} \approx 1\text{–}3 \text{ Hz} \]
+  <br/>
+  <strong>Slip sideband frequencies:</strong><br/>
+  \[ f_{lower} = f_{line} - 2f_{slip}, \qquad f_{upper} = f_{line} + 2f_{slip} \]
+</div>
+
+<h3 class="subsubsection">Acceleration Model (Electrical Fault)</h3>
+
+<div class="eq-box">
+  <strong>Severity index:</strong>\( \quad s = \text{clip}(n/n^*,\; 0,\; 1) \)<br/><br/>
+  <strong>Magnetic pull at 2× line — growing 100 Hz vibration:</strong><br/>
+  \[
+    x_{em}(t) = (0.08 + 1.8s)\sin(2\pi f_{2\times}t + \varphi_0)
+  \]
+  <strong>Arc transients (probability per sample):</strong><br/>
+  \[
+    P_{arc} = 0.001 + 0.05s
+  \]
+  \[
+    x_{arc}(t) = \sum_{k:\; u_k < P_{arc}} A_k^{arc} \cdot e^{-\zeta\omega_n(t-t_k)}\sin[\omega_d(t-t_k)],
+    \quad A_k^{arc} \sim \text{LogNormal}(\ln(0.4 + 1.5s),\; 0.35^2)
+  \]
+</div>
+
+<h3 class="subsubsection">Current Model (Phase Imbalance)</h3>
+
+<div class="eq-box">
+  \[
+    i(t) = I_{FLA}\lambda_{load}(1 + 0.12s)
+          + A_{sb}\sin(2\pi f_{lower}t + \varphi_0)
+          + A_{sb}\sin(2\pi f_{upper}t)
+          + A_{h3}\sin(2\pi f_{3\times}t + \varphi_0)
+          + i_{arc}(t) + \varepsilon(t)
+  \]
+  \[
+    A_{sb} = 0.04\,s\,I_{FLA}\lambda_{load}, \qquad A_{h3} = 0.05\,s\,I_{FLA}\lambda_{load}
+  \]
+  <div class="eq-label">Slip sidebands (\(f_{line} \pm 2f_{slip}\)) are the primary electrical signature. The 3rd harmonic (150 Hz) grows from phase imbalance stress.</div>
+</div>
+
+<!-- ── 6.3 OVERHEATING ── -->
+<h2 class="subsection" id="s6-3">6.3 Motor Overheating — Exponential Thermal Model</h2>
+
+<p>Temperature rise follows Newton's Law of Cooling (first-order system response to a step heat input).</p>
+
+<div class="eq-box">
+  <strong>Winding temperature rise above ambient:</strong><br/>
+  \[
+    \Delta T(n) = \Delta T_{ss} \left(1 - e^{-n/\tau_{th}}\right)
+  \]
+  <div class="eq-label">
+    \(\Delta T_{ss} \sim \mathcal{U}(80°C,\; 130°C)\) — steady-state temperature rise at saturation.<br/>
+    \(\tau_{th} = 0.4\,n^*\) — thermal time constant in intervals (40% of run duration).<br/>
+    \(n\) = current interval number, \(n^* \in [11, 15]\) = critical interval.
+  </div>
+  <br/>
+  <strong>Thermal severity (normalised):</strong><br/>
+  \[
+    s_{th} = \text{clip}\!\left(\frac{\Delta T(n)}{\Delta T_{ss}},\; 0,\; 1\right)
+    = \text{clip}\!\left(1 - e^{-n/\tau_{th}},\; 0,\; 1\right)
+  \]
+  <br/>
+  <strong>Winding resistance with temperature:</strong><br/>
+  \[
+    R_{winding}(T) = R_0 \left(1 + \alpha_{Cu}\,\Delta T\right), \qquad \alpha_{Cu} = 0.00393\;°C^{-1}
+  \]
+  <div class="eq-label">As winding temperature rises, resistance increases. To maintain torque at constant load, slip increases, causing a slight (≤10%) current rise.</div>
+</div>
+
+<h3 class="subsubsection">Acceleration Model (Overheating)</h3>
+
+<div class="eq-box">
+  <strong>Thermal expansion → 1× shaft amplitude growth:</strong>
+  \[
+    x_{1\times}(t) = a_{nom}\lambda_{load}(0.3 + 0.8\,s_{th})\sin(2\pi f_{shaft}t)
+  \]
+  <strong>Thermal cycling ripple (≈1.5 Hz):</strong>
+  \[
+    x_{ripple}(t) = 0.5\,s_{th}\sin(2\pi \times 1.5\; t)
+  \]
+</div>
+
+<h3 class="subsubsection">Current Model (Overheating)</h3>
+
+<div class="eq-box">
+  <strong>Slip-induced DC rise + 3rd harmonic growth:</strong>
+  \[
+    i(t) = I_{FLA}\lambda_{load}(1 + 0.05\,s_{th})
+          + 0.06\,s_{th}\,I_{FLA}\lambda_{load}\sin(2\pi f_{3\times}t)
+          + 0.03\,s_{th}\,I_{FLA}\lambda_{load}\sin(2\pi \times 0.8\;t)
+          + \varepsilon(t)
+  \]
+  <div class="eq-label">3rd harmonic (150 Hz) grows with insulation stress. The 0.8 Hz term represents very-slow thermal cycling modulation of the load current.</div>
+</div>
+
+<!-- ── 6.4 SHAFT MISALIGNMENT ── -->
+<h2 class="subsection" id="s6-4">6.4 Motor Shaft Misalignment</h2>
+
+<p>Shaft misalignment has two physically distinct components: angular (dominates 1× RPM) and parallel (dominates 2× RPM). Each run randomly selects the mix:</p>
+
+<div class="eq-box">
+  \[
+    \lambda_{ang} \sim \mathcal{U}(0.3,\; 0.7) \quad \text{(angular fraction)}
+  \]
+  \[
+    A_{1\times} = \lambda_{ang}(0.2 + 2.8\,s)\lambda_{load}
+  \]
+  \[
+    A_{2\times} = (1 - \lambda_{ang})(0.15 + 3.2\,s)\lambda_{load}
+  \]
+  <br/>
+  <strong>Acceleration signal:</strong><br/>
+  \[
+    x_{accel}(t) = a_{nom}\lambda_{load}
+                 + A_{1\times}\sin(2\pi f_{shaft}t + \varphi_1)
+                 + A_{2\times}\sin(2\pi \cdot 2f_{shaft}\cdot t + \varphi_2)
+                 + \varepsilon(t)
+  \]
+  <div class="eq-label">
+    Phase angles \(\varphi_1, \varphi_2 \sim \mathcal{U}(0, 2\pi)\) are fixed per run — real misalignment has a fixed but unknown phase relative to any measurement trigger.<br/>
+    Kurtosis stays near 1.5 (pure sinusoids, not impulsive) — unlike bearing faults.
+  </div>
+  <br/>
+  <strong>Current — torque modulation at 2× shaft:</strong><br/>
+  \[
+    i(t) = I_{FLA}\lambda_{load}(1 + 0.25\,s)
+          + 0.15\,s\,I_{FLA}\lambda_{load}\sin(2\pi \cdot 2f_{shaft}\cdot t + \varphi_2)
+          + \varepsilon(t)
+  \]
+</div>
+
+<!-- ── 6.5 MOTOR STALL ── -->
+<h2 class="subsection" id="s6-5">6.5 Motor Stall — Locked-Rotor Event</h2>
+
+<p>Motor stall is a <strong>sudden fault</strong>. Pre-fault baseline is flat (healthy). At the stall interval, the rotor decelerates to zero.</p>
+
+<div class="eq-box">
+  <strong>Rotor deceleration model (chirped shaft frequency):</strong><br/>
+  \[
+    f_{shaft}(t) = f_{shaft,0}\cdot e^{-t/\tau_{decel}}, \qquad \tau_{decel} = 0.3 \text{ s}
+  \]
+  <br/>
+  <strong>Vibration during stall transition:</strong><br/>
+  \[
+    x_{decel}(t) = a_{nom}\lambda_{load}\,e^{-t/\tau_{decel}} \cdot \sin\!\left(2\pi \int_0^t f_{shaft}(\tau)\,d\tau\right)
+  \]
+  \[
+    + \underbrace{0.08(1 - e^{-t/\tau_{decel}})\sin(2\pi f_{2\times}t)}_{\text{EM hum building as rotation stops}}
+  \]
+  <div class="eq-label">The chirped sinusoid decays to zero (rotor stops). Simultaneously, the electromagnetic hum at 100 Hz builds as the rotor locks in the AC flux field.</div>
+  <br/>
+  <strong>Locked-rotor current (LRC):</strong><br/>
+  \[
+    i_{LRC,peak} = I_{FLA}\lambda_{load}\cdot C_{LRC}, \qquad C_{LRC} \sim \mathcal{U}(6.0,\; 8.0)
+  \]
+  \[
+    i(t)\big|_{stall} = i_{LRC,peak}\cdot e^{-0.5\,t} + \mathcal{N}(0,\; 3^2)
+  \]
+  <div class="eq-label">The LRC decays slightly as rotor heats up (resistance increases, reducing current). Typical LRC = 6–8× full-load current for induction motors.</div>
+</div>
+
+<!-- ── 6.6 VIBRATION ANOMALY ── -->
+<h2 class="subsection" id="s6-6">6.6 Motor Vibration Anomaly — Three Physical Sub-types</h2>
+
+<p>Each run randomly selects one of three physically distinct vibration sub-types:</p>
+
+<table>
+  <thead>
+    <tr><th>Sub-type</th><th>Dominant Signature</th><th>Kurtosis</th><th>Physical Cause</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>A — Imbalance</strong></td><td>1× shaft (pure sine)</td><td>≈1.5</td><td>Mass eccentricity on rotor</td></tr>
+    <tr><td><strong>B — Looseness</strong></td><td>Sub-harmonics: 0.5×, 1×, 1.5×, 2×, 3×</td><td>5–10</td><td>Worn bearing housing, loose bolts</td></tr>
+    <tr><td><strong>C — Dry Friction / Rubs</strong></td><td>Broadband burst at \(\omega_n\)</td><td>&gt;15</td><td>Rotor-stator contact, dry bearing</td></tr>
+  </tbody>
+</table>
+
+<div class="eq-box">
+  <strong>Sub-type A (Imbalance) — pure 1× sine:</strong><br/>
+  \[
+    x_{accel}(t) = a_{nom}\lambda_{load} + a_{nom}\lambda_{load}(0.2 + 4.0s)\sin(2\pi f_{shaft}t + \varphi) + \varepsilon(t)
+  \]
+  <br/>
+  <strong>Sub-type B (Looseness) — sub-harmonic series:</strong><br/>
+  \[
+    x_{accel}(t) = a_{nom}\lambda_{load} + A_B \left[
+      1.5\sin(2\pi\cdot 0.5f_{shaft}\cdot t + \varphi)
+      + 2.0\sin(2\pi f_{shaft}t + \varphi + \delta\varphi)
+      + 1.2\sin(2\pi\cdot 1.5f_{shaft}\cdot t)
+      + 0.8\sin(2\pi\cdot 2f_{shaft}\cdot t)
+      + 0.4\sin(2\pi\cdot 3f_{shaft}\cdot t)
+    \right] + \varepsilon
+  \]
+  \[
+    A_B = 0.6\,a_{nom}\lambda_{load}\cdot s, \quad
+    \delta\varphi \sim \mathcal{N}(0, \sigma_{jitter}^2)
+  \]
+  <div class="eq-label">Phase jitter \(\sigma_{jitter} \sim \mathcal{U}(0.05, 0.25)\) rad models the unstable mounting. Signal is also clipped (hard nonlinearity) to simulate contact with a loose stop.</div>
+  <br/>
+  <strong>Sub-type C (Dry Friction) — random burst impacts:</strong><br/>
+  \[
+    P_{burst} = 0.003 + 0.015s
+  \]
+  \[
+    x_{accel}(t) = a_{nom}\lambda_{load}
+    + \sum_{k:\; u_k < P_{burst}} A_k \cdot e^{-\zeta\omega_n(t-t_k)}\sin[\omega_d(t-t_k)]
+  \]
+  \[
+    A_k \sim \text{LogNormal}(\ln(0.5 + 2.5s),\; 0.45^2)
+  \]
+</div>
+
+<!-- ── 6.7 WINDING FAILURE ── -->
+<h2 class="subsection" id="s6-7">6.7 Motor Winding Failure — Insulation Breakdown</h2>
+
+<p>Turn-to-turn short circuits develop progressively. Odd current harmonics grow quadratically with the fraction of shorted turns. Partial discharge (PD) events are temporally clustered — one discharge lowers the threshold for the next (Weibull/self-triggering model).</p>
+
+<div class="eq-box">
+  <strong>Insulation health index:</strong><br/>
+  \[
+    H(n) = \max\!\left(1 - \frac{n}{n^*},\; 0\right), \qquad s = 1 - H(n)
+  \]
+  <br/>
+  <strong>3rd harmonic growth (quadratic with shorted turns):</strong><br/>
+  \[
+    A_{h3} = I_{FLA}\lambda_{load} \times 0.08\,s^2
+  \]
+  <strong>5th harmonic (≈60% of 3rd):</strong><br/>
+  \[
+    A_{h5} = I_{FLA}\lambda_{load} \times 0.05\,s^2
+  \]
+  <strong>Current signal:</strong><br/>
+  \[
+    i(t) = I_{FLA}\lambda_{load}
+          + A_{h3}\sin(2\pi f_{3\times}t + \varphi_3)
+          + A_{h5}\sin(2\pi f_{5\times}t + \varphi_5)
+          + i_{PD}(t) + \varepsilon(t)
+  \]
+  <div class="eq-label">The quadratic \(s^2\) growth reflects the physical relationship where harmonic current grows proportionally to (shorted turns)² due to the mutual inductance coupling between healthy and shorted turns.</div>
+</div>
+
+<div class="eq-box">
+  <strong>Partial Discharge (PD) — self-triggering cluster model:</strong><br/>
+  \[
+    P_{PD} = 0.0003 + 0.008\,s \quad (\text{per sample})
+  \]
+  After each PD event at sample \(i\):<br/>
+  \[
+    \text{Follow-up events: } n_{cluster} \sim \text{Poisson}(\lambda_{cl}), \quad \lambda_{cl} = 2.5
+  \]
+  at samples \(i + j\) where \(j \sim \mathcal{U}\{1, 14\}\), with a refractory period \(\sim \mathcal{U}\{5, 39\}\) samples before the next primary event.
+</div>
+
+<!-- ── 6.8 PUMP CAVITATION ── -->
+<h2 class="subsection" id="s6-8">6.8 Pump Cavitation — Rayleigh Bubble Collapse</h2>
+
+<p>Cavitation occurs when local static pressure drops below the vapour pressure \(p_v\) of the fluid. Vapour bubbles form and collapse violently (Rayleigh collapse) when they reach higher-pressure zones near the impeller vanes.</p>
+
+<div class="eq-box">
+  <strong>Rayleigh collapse time (spherical bubble):</strong><br/>
+  \[
+    T_{collapse} = 0.915\,R_0\sqrt{\frac{\rho}{p_\infty - p_v}}
+  \]
+  <div class="eq-label">\(R_0\) = initial bubble radius, \(\rho\) = fluid density, \(p_\infty\) = far-field pressure.<br/>Each collapse creates a pressure micro-jet exciting the pump casing resonance at \(\omega_{n,pump} = 2\pi \times 2000\) rad/s, \(\zeta_{pump} = 0.05\).</div>
+  <br/>
+  <strong>Collapse events cluster at BPF</strong> (pressure recovery repeats at each vane pass):<br/>
+  \[
+    x_{accel}(t) = x_{train}(t;\;\text{BPF},\; 3.5\lambda_{load},\; \omega_{n,pump},\; \zeta_{pump})
+    + x_{train}(t;\;2\cdot\text{BPF},\; 1.8\lambda_{load})
+    + x_{train}(t;\;0.5\cdot\text{BPF},\; 1.2\lambda_{load},\;\eta=0.12)
+  \]
+  <div class="eq-label">The 0.5×BPF sub-harmonic appears during developed cavitation from the recirculation zone at the impeller inlet — a well-documented cavitation diagnostic marker.</div>
+</div>
+
+<div class="eq-box">
+  <strong>Current — pump efficiency loss:</strong><br/>
+  \[
+    i(t)\big|_{cavitation} = 1.8\,I_{FLA}\lambda_{load} + 0.25\,I_{FLA}\lambda_{load}\sin(2\pi\,\text{BPF}\cdot t) + \varepsilon(t)
+  \]
+  <div class="eq-label">Cavitation reduces pump head → motor runs against recirculation loss → current rises (opposite of seal leakage). BPF ripple appears in current from periodic hydraulic impulse loading.</div>
+</div>
+
+<!-- ── 6.9 IMPELLER DAMAGE ── -->
+<h2 class="subsection" id="s6-9">6.9 Pump Impeller Damage — Hydraulic Imbalance</h2>
+
+<p>A missing or deformed vane breaks the 5-fold symmetry of the impeller, creating hydraulic unbalance at 1× shaft and amplitude-modulated BPF vibration with sidebands.</p>
+
+<div class="eq-box">
+  <strong>BPF sidebands from amplitude modulation (AM):</strong><br/>
+  \[
+    \text{Lower sideband: } f_{BPF} - f_{shaft} \approx 48.6 \text{ Hz}
+  \]
+  \[
+    \text{Upper sideband: } f_{BPF} + f_{shaft} \approx 73.0 \text{ Hz}
+  \]
+  <br/>
+  <strong>Amplitude-modulated BPF (shaft-rate envelope):</strong><br/>
+  \[
+    x_{BPF,mod}(t) = x_{train}(t;\;\text{BPF},\;\ldots) \cdot \underbrace{\left(1 + 0.8\left|\sin(\pi f_{shaft}t)\right|\right)}_{E_{shaft}(t)}
+  \]
+  <br/>
+  <strong>Full post-damage signal:</strong><br/>
+  \[
+    x_{accel}(t) = a_{nom}\lambda_{load}
+                 + 2.0\lambda_{load}\sin(2\pi f_{shaft}t + \varphi_0)
+                 + x_{BPF,mod}(t)\cdot E_{shaft}(t)
+                 + 0.8\lambda_{load}\sin(2\pi(f_{BPF} - f_{shaft})t)
+                 + 0.8\lambda_{load}\sin(2\pi(f_{BPF} + f_{shaft})t)
+                 + \varepsilon(t)
+  \]
+</div>
+
+<!-- ── 6.10 SEAL LEAKAGE ── -->
+<h2 class="subsection" id="s6-10">6.10 Pump Seal Leakage — Turbulent Leak Model</h2>
+
+<p>Mechanical seal failure allows fluid to escape around the shaft. The distinguishing signature is <strong>broadband turbulent hissing</strong> (300–3000 Hz), not the periodic BPF popping of cavitation.</p>
+
+<div class="eq-box">
+  <strong>Turbulent hiss (broadband Gaussian, amplitude-modulated by leak fraction):</strong><br/>
+  \[
+    x_{audio}(t)\big|_{leak} = L_{base} + 8 + \mathcal{N}(0,\; [12\lambda_{leak}]^2) + x_{suction}(t)
+  \]
+  \[
+    \lambda_{leak} \sim \mathcal{U}(0.3,\; 1.0) \quad \text{(fraction of seal circumference failed)}
+  \]
+  <br/>
+  <strong>Current — running light (opposite of cavitation):</strong><br/>
+  \[
+    i(t)\big|_{leak} = 0.75\,I_{FLA}\lambda_{load}
+                     + 0.4\lambda_{leak}\,I_{FLA}\lambda_{load}\sin(2\pi \times 0.5\;t)
+                     + \varepsilon(t)
+  \]
+  <div class="eq-label">When fluid escapes, the pump loses hydraulic load → motor draws less current. The 0.5 Hz oscillation models slow pressure-wave hunting as the pump cycles between loaded and unloaded states. This current-drop signature distinguishes seal leakage from all other faults.</div>
+  <br/>
+  <strong>Onset transient (seal rupture pressure wave):</strong><br/>
+  \[
+    x_{transient}(t) = 2.5\lambda_{load}\,e^{-t/0.15}\sin(2\pi f_{shaft}t)
+  \]
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 7 — DEVIATION SCORING
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s7">7. Deviation Scoring &amp; Fault Severity</h1>
+
+<h2 class="subsection">7.1 Baseline Estimation</h2>
+
+<p>The baseline (healthy reference) is computed from the first \(N_{baseline}\) intervals using a robust percentile window to reduce sensitivity to outliers:</p>
+
+<div class="eq-box">
+  <strong>Robust baseline for parameter \(\theta\):</strong><br/>
+  \[
+    \mu_\theta^{baseline} = \text{median}\!\left\{\theta_1, \theta_2, \ldots, \theta_{N_{baseline}}\right\}
+  \]
+  \[
+    \sigma_\theta^{baseline} = \text{MAD} = \text{median}\!\left\{|\theta_k - \mu_\theta^{baseline}|\right\} \times 1.4826
+  \]
+  <div class="eq-label">MAD (Median Absolute Deviation) scaled by 1.4826 is equivalent to the Gaussian standard deviation but robust to outliers. Primary sensor parameters get weight 1.0; secondary parameters get 0.4.</div>
+</div>
+
+<h2 class="subsection">7.2 Z-score Normalisation</h2>
+
+<div class="eq-box">
+  \[
+    z_\theta(n) = \frac{\theta(n) - \mu_\theta^{baseline}}{\sigma_\theta^{baseline}}
+  \]
+  <div class="eq-label">Stored alongside raw values. A z-score of 3 means the parameter is 3 standard deviations above the healthy baseline — typically indicating a significant deviation.</div>
+</div>
+
+<h2 class="subsection">7.3 Weighted Deviation Score</h2>
+
+<div class="eq-box">
+  <strong>Per-parameter deviation (direction-aware):</strong><br/>
+  \[
+    d_\theta(n) = \begin{cases}
+      \max(z_\theta(n),\; 0) & \text{if direction = ``up''} \\
+      \max(-z_\theta(n),\; 0) & \text{if direction = ``down''} \\
+      |z_\theta(n)| & \text{if direction = ``abs''} \\
+      |z_\theta(n)| & \text{if direction = ``any''}
+    \end{cases}
+  \]
+  <br/>
+  <strong>Composite deviation score for fault type \(F\):</strong><br/>
+  \[
+    D_F(n) = \frac{\sum_{\theta \in \Theta_F} w_\theta \cdot d_\theta(n)}{\sum_{\theta \in \Theta_F} w_\theta}
+  \]
+  <div class="eq-label">\(\Theta_F\) = set of parameters with non-zero weight for fault \(F\). \(w_\theta \in [0, 1]\) = fault-specific parameter weight. \(D_F\) is a normalised weighted average of z-scores.</div>
+</div>
+
+<h2 class="subsection">7.4 Monotonic Trend Slope</h2>
+
+<p>A linear (least-squares) slope is computed over the deviation window to characterise the rate of degradation:</p>
+
+<div class="eq-box">
+  <strong>Least-squares slope:</strong><br/>
+  \[
+    \hat{\beta}_\theta = \frac{\sum_{k=1}^{M} (k - \bar{k})(\theta_k - \bar{\theta})}{\sum_{k=1}^{M} (k - \bar{k})^2}
+  \]
+  <div class="eq-label">Computed over the \(M\)-interval deviation window (pre-fault trend). Stored as a training feature. A positive slope indicates a rising trend (degradation); negative slope indicates decline (e.g., vibration drops in motor stall).</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 8 — PARAMETER WEIGHTS
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s8">8. Parameter Weights per Fault Type</h1>
+
+<p>The following table summarises the primary diagnostic parameters for each fault type and their contribution weights to the deviation score. Weight = 1.0 is primary; 0.4 is secondary; 0.0 = excluded.</p>
+
+<table>
+  <thead>
+    <tr><th>Fault Type</th><th>Sensor</th><th>Parameter</th><th>Weight</th><th>Direction</th></tr>
+  </thead>
+  <tbody>
+    <tr><td rowspan="4"><strong>Motor Bearing Failure</strong></td><td>Acceleration</td><td>Kurtosis</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Acceleration</td><td>|Skewness|</td><td>0.7</td><td>abs</td></tr>
+    <tr><td>Acceleration</td><td>FFT Amplitude 1 (BPFO)</td><td>0.8</td><td>↑ up</td></tr>
+    <tr><td>Audio</td><td>Kurtosis</td><td>0.7</td><td>↑ up</td></tr>
+    <tr><td rowspan="4"><strong>Motor Electrical Fault</strong></td><td>Current</td><td>|Skewness|</td><td>1.0</td><td>abs</td></tr>
+    <tr><td>Current</td><td>Kurtosis</td><td>0.9</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>FFT Amplitude 2 (3rd harmonic)</td><td>0.8</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>FFT Amplitude 3 (5th harmonic)</td><td>0.7</td><td>↑ up</td></tr>
+    <tr><td rowspan="3"><strong>Motor Overheating</strong></td><td>Current</td><td>Mean</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>Std Dev</td><td>0.7</td><td>↑ up</td></tr>
+    <tr><td>Audio</td><td>Mean</td><td>0.3</td><td>↑ up</td></tr>
+    <tr><td rowspan="3"><strong>Motor Shaft Misalignment</strong></td><td>Acceleration</td><td>FFT Amplitude 2 (2×RPM)</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Acceleration</td><td>FFT Amplitude 3 (4×RPM)</td><td>0.7</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>FFT Amplitude 2</td><td>0.4</td><td>↑ up</td></tr>
+    <tr><td rowspan="3"><strong>Motor Stall</strong></td><td>Current</td><td>Mean</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Acceleration</td><td>Mean</td><td>1.0</td><td>↓ down</td></tr>
+    <tr><td>Acceleration</td><td>FFT Amplitude 1 (1×shaft)</td><td>0.8</td><td>↓ down</td></tr>
+    <tr><td rowspan="3"><strong>Motor Vibration Anomaly</strong></td><td>Acceleration</td><td>Std Dev</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Acceleration</td><td>Kurtosis</td><td>0.9</td><td>↑ up</td></tr>
+    <tr><td>Audio</td><td>Std Dev</td><td>0.5</td><td>↑ up</td></tr>
+    <tr><td rowspan="4"><strong>Motor Winding Failure</strong></td><td>Current</td><td>FFT Amplitude 2 (3rd har.)</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>FFT Amplitude 3 (5th har.)</td><td>0.9</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>Kurtosis</td><td>0.8</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>|Skewness|</td><td>0.7</td><td>abs</td></tr>
+    <tr><td rowspan="4"><strong>Pump Cavitation</strong></td><td>Acceleration</td><td>Kurtosis</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Acceleration</td><td>|Skewness|</td><td>0.8</td><td>abs</td></tr>
+    <tr><td>Audio</td><td>Kurtosis</td><td>0.9</td><td>↑ up</td></tr>
+    <tr><td>Audio</td><td>FFT Amplitude 3–4 (broadband)</td><td>0.7</td><td>↑ up</td></tr>
+    <tr><td rowspan="3"><strong>Pump Impeller Damage</strong></td><td>Acceleration</td><td>FFT Amplitude 1 (BPF)</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Acceleration</td><td>FFT Amplitude 2 (2×BPF)</td><td>0.8</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>FFT Amplitude 1 (BPF sideband)</td><td>0.6</td><td>↑ up</td></tr>
+    <tr><td rowspan="3"><strong>Pump Seal Leakage</strong></td><td>Audio</td><td>Mean</td><td>1.0</td><td>↑ up</td></tr>
+    <tr><td>Audio</td><td>Kurtosis</td><td>0.7</td><td>↑ up</td></tr>
+    <tr><td>Current</td><td>Mean</td><td>0.3</td><td>any</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 9 — FREQUENCY REFERENCE
+════════════════════════════════════════════════════ -->
+<h1 class="section" id="s9">9. Fault Frequency Reference Table</h1>
+
+<table>
+  <thead>
+    <tr><th>Frequency</th><th>Symbol</th><th>Value (Hz)</th><th>Relevance</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Line fundamental</td><td>\(f_{line}\)</td><td>50.0</td><td>All electrical faults</td></tr>
+    <tr><td>Shaft (rotation)</td><td>\(f_{shaft}\)</td><td>12.17</td><td>Imbalance, misalignment, impeller</td></tr>
+    <tr><td>2× line (magnetic pull)</td><td>\(f_{2\times}\)</td><td>100.0</td><td>Electrical faults, winding, stall</td></tr>
+    <tr><td>3× line (phase imbalance)</td><td>\(f_{3\times}\)</td><td>150.0</td><td>Winding, overheating</td></tr>
+    <tr><td>5× line (insulation stress)</td><td>\(f_{5\times}\)</td><td>250.0</td><td>Winding failure</td></tr>
+    <tr><td>2× shaft</td><td>\(2f_{shaft}\)</td><td>24.33</td><td>Misalignment (parallel), looseness</td></tr>
+    <tr><td>BPFO (outer race)</td><td>BPFO</td><td>29.4</td><td>Bearing failure (outer race)</td></tr>
+    <tr><td>BSF (ball spin)</td><td>BSF</td><td>11.8</td><td>Ball wear</td></tr>
+    <tr><td>BPFI (inner race)</td><td>BPFI</td><td>43.6</td><td>Bearing failure (inner race)</td></tr>
+    <tr><td>BPF (blade pass)</td><td>BPF</td><td>60.8</td><td>Cavitation, impeller damage</td></tr>
+    <tr><td>BPF sub-harmonic</td><td>0.5×BPF</td><td>30.4</td><td>Developed cavitation (recirculation)</td></tr>
+    <tr><td>BPF + shaft (sideband)</td><td>BPF+\(f_s\)</td><td>73.0</td><td>Impeller damage</td></tr>
+    <tr><td>BPF − shaft (sideband)</td><td>BPF−\(f_s\)</td><td>48.6</td><td>Impeller damage</td></tr>
+    <tr><td>Slip sideband (lower)</td><td>\(f_{line} - 2f_{slip}\)</td><td>44–48</td><td>Electrical fault (phase imbalance)</td></tr>
+    <tr><td>Slip sideband (upper)</td><td>\(f_{line} + 2f_{slip}\)</td><td>52–56</td><td>Electrical fault (phase imbalance)</td></tr>
+    <tr><td>Thermal cycling</td><td>—</td><td>0.8–1.5</td><td>Overheating (very slow modulation)</td></tr>
+  </tbody>
+</table>
+
+<div class="note-box">
+  <strong>Note on 50 Hz vs 60 Hz systems:</strong> All frequency values above are calibrated to the European 50 Hz grid.
+  Do NOT use 120 Hz (2× 60 Hz) values from North American references — the magnetic pull frequency and all derived harmonics will be incorrect for this Wilo installation.
+</div>
+
+<div class="info-box">
+  <strong>Sampling adequacy:</strong> The system samples at 700 Hz, giving a Nyquist limit of 350 Hz.
+  All fault frequencies of interest (up to 250 Hz for the 5th harmonic) are well within this limit,
+  providing at least 2.8 samples per cycle at the highest diagnostic frequency.
+</div>
+
+<!-- ══ footer ══ -->
+<hr style="margin-top:40px; border-color: var(--border);"/>
+<p style="text-align:center; font-size:9pt; color: var(--sub); margin-top:10px;">
+  WILO Cloud Monitoring System — Mathematical Reference Document<br/>
+  Generated from source code: <code>base_generator.py</code>, <code>fft_analysis.py</code>, <code>trend_extractor.py</code>, and all fault generator modules.<br/>
+  All formulas verified against implementation.
+</p>
+
+</body>
+</html>

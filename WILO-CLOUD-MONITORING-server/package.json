@@ -1,0 +1,15 @@
+{
+  "name": "wilo-cloud-monitoring",
+  "version": "1.0.0",
+  "description": "Wilo Cloud Monitoring Dashboard",
+  "scripts": {
+    "start": "concurrently --names \"BACKEND,FRONTEND\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm run backend\" \"npm run frontend\"",
+    "backend": "python app.py",
+    "frontend": "cd frontend && npm run dev",
+    "install:all": "npm install && cd frontend && npm install",
+    "dev": "npm run start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
