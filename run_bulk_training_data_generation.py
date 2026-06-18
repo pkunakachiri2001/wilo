@@ -75,20 +75,21 @@ def main():
         "--fault-runs",
         type=int,
         default=50,
-        help="Number of times to run each of the 11 fault generators (default: 50)"
+        help="Number of times to run each of the 10 fault generators (default: 50)"
     )
     parser.add_argument(
         "--normal-intervals",
         type=int,
-        default=250,
-        help="Number of healthy normal operation intervals to generate (default: 250)"
+        default=0,
+        help="Number of healthy normal operation intervals to generate (default: 0)"
     )
     parser.add_argument(
-        "--local-only",
+        "--cloud-db",
         action="store_true",
-        help="Bypass cloud database PostgreSQL inserts and save ONLY to local JSONL files (extreme high-speed)"
+        help="Enable cloud database PostgreSQL inserts (default: disabled)"
     )
     args = parser.parse_args()
+    args.local_only = not args.cloud_db
 
     # Enable database connection reuse to avoid TCP handshake overhead on Neon
     os.environ['REUSE_CONNECTION'] = 'true'

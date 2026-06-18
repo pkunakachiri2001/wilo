@@ -824,7 +824,10 @@ class EventManager:
             total_rows_inserted = db_result['total_rows_inserted']
             rows_per_sensor = db_result['rows_per_sensor']
             
-            print(f"\n[SUCCESS] Event saved to Neon database!")
+            if os.getenv('LOCAL_ONLY') == 'true':
+                print(f"\n[SUCCESS] Event saved to local storage files!")
+            else:
+                print(f"\n[SUCCESS] Event saved to Neon database!")
             print(f"  Fault ID: {fault_id}")
             print(f"  Total Rows Inserted: {total_rows_inserted}")
             for sensor_type, count in rows_per_sensor.items():

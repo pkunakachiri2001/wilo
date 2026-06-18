@@ -2,6 +2,13 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import os
 import sys
+import os
+# Dynamically add WILO-CLOUD-MONITORING-server subdirectory to path to resolve imports
+_base_dir = os.path.dirname(os.path.abspath(__file__))
+_server_dir = os.path.join(_base_dir, 'WILO-CLOUD-MONITORING-server')
+if os.path.exists(_server_dir) and _server_dir not in sys.path:
+    sys.path.insert(0, _server_dir)
+
 import subprocess
 import glob
 import csv
@@ -26,10 +33,18 @@ from database import (
 from psycopg2.extras import RealDictCursor
 from event_manager import EventManager
 from fft_analysis import calculate_fft_analysis, calculate_fft_full_spectrum
+import anomaly_detector
 
 load_dotenv()
 
-app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
+# Configure static folder dynamically to support both structures
+static_folder = 'frontend/dist'
+if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), static_folder)):
+    nested_path = 'WILO-CLOUD-MONITORING-server/frontend/dist'
+    if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), nested_path)):
+        static_folder = nested_path
+
+app = Flask(__name__, static_folder=static_folder, static_url_path='')
 
 # CORS configuration - allow frontend and production domains
 ALLOWED_ORIGINS = [
@@ -1441,38 +1456,84 @@ def latest_data_timestamp():
     Get the maximum created_at timestamp across all three sensor tables.
     Used by frontend to check for new data uploads.
     """
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        
-        # Query the latest created_at across acceleration, current, audio
-        query = """
-            SELECT MAX(created_at) FROM (
-                SELECT MAX(created_at) as created_at FROM acceleration
-                UNION ALL
-                SELECT MAX(created_at) as created_at FROM current
-                UNION ALL
-                SELECT MAX(created_at) as created_at FROM audio
-            ) t
-        """
-        cur.execute(query)
-        res = cur.fetchone()
-        
-        timestamp = None
-        if res and res[0]:
-            timestamp = res[0].isoformat()
+    local_only = os.getenv('LOCAL_ONLY') == 'true'
+    if not local_only:
+        conn = None
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
             
+            # Query the latest created_at across acceleration, current, audio
+            query = """
+                SELECT MAX(created_at) FROM (
+                    SELECT MAX(created_at) as created_at FROM acceleration
+                    UNION ALL
+                    SELECT MAX(created_at) as created_at FROM current
+                    UNION ALL
+                    SELECT MAX(created_at) as created_at FROM audio
+                ) t
+            """
+            cur.execute(query)
+            res = cur.fetchone()
+            
+            timestamp = None
+            if res and res[0]:
+                timestamp = res[0].isoformat()
+                
+            return jsonify({
+                'status': 'success',
+                'timestamp': timestamp
+            }), 200
+        except Exception as e:
+            logger.warning(f'Database error fetching latest timestamp (falling back to local): {e}')
+        finally:
+            if conn:
+                conn.close()
+
+    # Fall back to local JSONLs and CSV files modification times
+    try:
+        max_ts = None
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        data_dir = os.path.join(base_dir, 'data')
+        
+        # Check local data JSONL file timestamps (the last line has the latest time)
+        if os.path.exists(data_dir):
+            for sensor in ['acceleration', 'current', 'audio']:
+                file_path = os.path.join(data_dir, f"{sensor}.jsonl")
+                if os.path.exists(file_path):
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            # Read all lines and check the last line
+                            lines = f.readlines()
+                            if lines:
+                                row = json.loads(lines[-1].strip())
+                                created_at = row.get('created_at')
+                                if created_at:
+                                    if max_ts is None or created_at > max_ts:
+                                        max_ts = created_at
+                    except Exception:
+                        # Fallback to file mtime if file is locked or empty
+                        mtime = dt.datetime.fromtimestamp(os.path.getmtime(file_path), tz=dt.timezone.utc).isoformat()
+                        if max_ts is None or mtime > max_ts:
+                            max_ts = mtime
+                            
+        # Also check modification times of files in Data/ directory
+        if os.path.exists(DATA_DIR):
+            for sensor in ['acceleration', 'current', 'audio']:
+                for prefix in ['max', 'min']:
+                    csv_path = os.path.join(DATA_DIR, f"{prefix}_{sensor}.csv")
+                    if os.path.exists(csv_path):
+                        mtime = dt.datetime.fromtimestamp(os.path.getmtime(csv_path), tz=dt.timezone.utc).isoformat()
+                        if max_ts is None or mtime > max_ts:
+                            max_ts = mtime
+
         return jsonify({
             'status': 'success',
-            'timestamp': timestamp
+            'timestamp': max_ts
         }), 200
     except Exception as e:
-        logger.error(f'Error fetching latest data timestamp: {e}')
+        logger.error(f'Error fetching latest local data timestamp: {e}')
         return jsonify({'error': str(e)}), 500
-    finally:
-        if conn:
-            conn.close()
 
 
 @app.route('/simulate-event', methods=['POST'])
@@ -1665,63 +1726,46 @@ def db_diagnostic():
 def get_combined_dashboard_data():
     """
     Combined endpoint returning:
-    - Latest statistics from database (acceleration, current, audio)
+    - Latest statistics from database or local files (acceleration, current, audio)
     - Recent CSV files from Data/ directory
     - Ready for dashboard display
     """
     try:
-        conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        
         # 1. Fetch latest statistics from each sensor table
         latest_stats = {}
         sensors = ['acceleration', 'current', 'audio']
         
         for sensor in sensors:
             try:
-                query = f"""
-                    SELECT 
-                        x_min, x_max, mean, standard_deviation, skewness, kurtosis,
-                        frequency1, frequency2, frequency3, frequency4, frequency5,
-                        amplitude1, amplitude2, amplitude3, amplitude4, amplitude5,
-                        created_at
-                    FROM {sensor}
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                """
-                cur.execute(query)
-                row = cur.fetchone()
-                
+                row = _get_latest_sensor_stats_row(sensor, None)
                 if row:
                     latest_stats[sensor] = {
-                        'min': float(row['x_min']) if row['x_min'] is not None else 0,
-                        'max': float(row['x_max']) if row['x_max'] is not None else 0,
-                        'mean': float(row['mean']) if row['mean'] is not None else 0,
-                        'std_dev': float(row['standard_deviation']) if row['standard_deviation'] is not None else 0,
-                        'skewness': float(row['skewness']) if row['skewness'] is not None else 0,
-                        'kurtosis': float(row['kurtosis']) if row['kurtosis'] is not None else 0,
-                        'frequency1': float(row.get('frequency1', 0) or 0),
-                        'frequency2': float(row.get('frequency2', 0) or 0),
-                        'frequency3': float(row.get('frequency3', 0) or 0),
-                        'frequency4': float(row.get('frequency4', 0) or 0),
-                        'frequency5': float(row.get('frequency5', 0) or 0),
-                        'amplitude1': float(row.get('amplitude1', 0) or 0),
-                        'amplitude2': float(row.get('amplitude2', 0) or 0),
-                        'amplitude3': float(row.get('amplitude3', 0) or 0),
-                        'amplitude4': float(row.get('amplitude4', 0) or 0),
-                        'amplitude5': float(row.get('amplitude5', 0) or 0),
-                        'timestamp': row['created_at'].isoformat() if row['created_at'] else None,
-                        'source': 'database'
+                        'min': float(row.get('x_min') or 0.0),
+                        'max': float(row.get('x_max') or 0.0),
+                        'mean': float(row.get('mean') or 0.0),
+                        'std_dev': float(row.get('standard_deviation') or 0.0),
+                        'skewness': float(row.get('skewness') or 0.0),
+                        'kurtosis': float(row.get('kurtosis') or 0.0),
+                        'frequency1': float(row.get('frequency1', 0.0) or 0.0),
+                        'frequency2': float(row.get('frequency2', 0.0) or 0.0),
+                        'frequency3': float(row.get('frequency3', 0.0) or 0.0),
+                        'frequency4': float(row.get('frequency4', 0.0) or 0.0),
+                        'frequency5': float(row.get('frequency5', 0.0) or 0.0),
+                        'amplitude1': float(row.get('amplitude1', 0.0) or 0.0),
+                        'amplitude2': float(row.get('amplitude2', 0.0) or 0.0),
+                        'amplitude3': float(row.get('amplitude3', 0.0) or 0.0),
+                        'amplitude4': float(row.get('amplitude4', 0.0) or 0.0),
+                        'amplitude5': float(row.get('amplitude5', 0.0) or 0.0),
+                        'timestamp': row.get('created_at').isoformat() if isinstance(row.get('created_at'), dt.datetime) else row.get('created_at'),
+                        'source': 'local' if os.getenv('LOCAL_ONLY') == 'true' else 'database'
                     }
-                    logger.info(f"✓ {sensor}: freq1={latest_stats[sensor]['frequency1']}, amp1={latest_stats[sensor]['amplitude1']}")
+                    logger.info(f"✓ {sensor} stats fetched (using helper)")
                 else:
                     latest_stats[sensor] = None
                     
             except Exception as sensor_error:
                 logger.error(f"Error fetching {sensor}: {sensor_error}")
                 latest_stats[sensor] = None
-        
-        conn.close()
         
         # 2. Get recent CSV files from Data/ directory
         csv_files = []
@@ -1754,65 +1798,165 @@ def get_combined_dashboard_data():
         
     except Exception as e:
         logger.error(f"Error in combined dashboard data: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
 
 
-@app.route('/api/latest-statistics', methods=['GET'])
-def get_latest_db_statistics():
+def _get_latest_sensor_stats_row(sensor, mode='max'):
     """
-    Fetch latest statistics from database for dashboard display.
-    Returns the most recent record from each sensor table.
+    Fetch the latest statistics row for a sensor.
+    First tries the database (unless LOCAL_ONLY is set to 'true'),
+    then falls back to parsing the local data/{sensor}.jsonl file.
     """
-    try:
-        conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        result = {}
-        sensors = ['acceleration', 'current', 'audio']
-        
-        for sensor in sensors:
-            try:
+    local_only = os.getenv('LOCAL_ONLY') == 'true'
+    if not local_only:
+        try:
+            conn = get_connection()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            if mode:
                 query = f"""
                     SELECT 
-                        x_min, x_max, mean, standard_deviation, skewness, kurtosis,
+                        x_min, x_max, mean, standard_deviation, range, skewness, kurtosis, rms, peak, crest_factor, load_factor,
                         frequency1, frequency2, frequency3, frequency4, frequency5,
                         amplitude1, amplitude2, amplitude3, amplitude4, amplitude5,
-                        created_at
+                        created_at, file_type
+                    FROM {sensor}
+                    WHERE file_type = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """
+                cur.execute(query, (mode,))
+            else:
+                query = f"""
+                    SELECT 
+                        x_min, x_max, mean, standard_deviation, range, skewness, kurtosis, rms, peak, crest_factor, load_factor,
+                        frequency1, frequency2, frequency3, frequency4, frequency5,
+                        amplitude1, amplitude2, amplitude3, amplitude4, amplitude5,
+                        created_at, file_type
                     FROM {sensor}
                     ORDER BY created_at DESC
                     LIMIT 1
                 """
                 cur.execute(query)
-                row = cur.fetchone()
-                
-                if row:
-                    result[sensor] = {
-                        'min': row['x_min'],
-                        'max': row['x_max'],
-                        'mean': row['mean'],
-                        'std_dev': row['standard_deviation'],
-                        'skewness': row['skewness'],
-                        'kurtosis': row['kurtosis'],
-                        'frequencies': [row[f'frequency{i}'] for i in range(1, 6)],
-                        'amplitudes': [row[f'amplitude{i}'] for i in range(1, 6)],
-                        'timestamp': row['created_at'].isoformat() if row['created_at'] else None
-                    }
-                    logger.info(f"✓ Fetched latest {sensor} stats from database")
-                else:
-                    result[sensor] = None
-                    logger.info(f"✗ No data found for {sensor}")
-                    
-            except Exception as sensor_error:
-                logger.error(f"Error fetching {sensor}: {sensor_error}")
+            row = cur.fetchone()
+            conn.close()
+            if row:
+                return dict(row)
+        except Exception as db_exc:
+            logger.warning(f"Database statistics fetch failed for {sensor} (falling back to local): {db_exc}")
+
+    # Fall back to local JSONL
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(base_dir, 'data', f"{sensor}.jsonl")
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            for line in reversed(lines):
+                try:
+                    row = json.loads(line.strip())
+                    if not mode or row.get('file_type') == mode:
+                        created_at_str = row.get('created_at')
+                        if created_at_str:
+                            try:
+                                row['created_at'] = dt.datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                            except Exception:
+                                pass
+                        return row
+                except Exception:
+                    continue
+    except Exception as local_exc:
+        logger.error(f"Local statistics fetch failed for {sensor}: {local_exc}")
+
+    return {}
+
+
+# ======================== ANOMALY DETECTION ENDPOINT ========================
+@app.route('/api/anomaly-score', methods=['GET'])
+def get_anomaly_score():
+    """
+    Run Isolation Forest anomaly detection on the latest 'max' sensor snapshot.
+    Supports local fallback when LOCAL_ONLY=true.
+    """
+    if not anomaly_detector.is_ready():
+        return jsonify({
+            'success': False,
+            'model_ready': False,
+            'status': 'model_not_ready',
+            'message': 'Anomaly detection models are not loaded'
+        }), 200
+
+    try:
+        sensor_stats = {}
+        sensors = ['acceleration', 'current', 'audio']
+
+        for sensor in sensors:
+            row = _get_latest_sensor_stats_row(sensor, 'max')
+            if row:
+                sensor_stats[sensor] = row
+                logger.info(f"✓ Fetched latest max row for {sensor}")
+            else:
+                sensor_stats[sensor] = {}
+                logger.warning(f"⚠ No max row found for {sensor}")
+
+        result = anomaly_detector.score_snapshot(sensor_stats)
+        result['model_ready'] = True
+        result['success'] = True
+        result['timestamp'] = dt.datetime.now(dt.timezone.utc).isoformat()
+
+        if result.get('anomaly_score') is not None:
+            logger.info(
+                f"🤖 Anomaly score: {result['anomaly_score']:.4f}  "
+                f"is_anomaly={result['is_anomaly']}  "
+                f"confidence={result['confidence']}%  "
+                f"status={result['status']}"
+            )
+        else:
+            logger.info("🤖 Anomaly scoring returned empty result")
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Anomaly score endpoint error: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'model_ready': anomaly_detector.is_ready(),
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/latest-statistics', methods=['GET'])
+def get_latest_db_statistics():
+    """
+    Fetch latest statistics from database or local files for dashboard display.
+    Returns the most recent record from each sensor table.
+    """
+    try:
+        result = {}
+        sensors = ['acceleration', 'current', 'audio']
+        
+        for sensor in sensors:
+            row = _get_latest_sensor_stats_row(sensor, 'max')
+            if row:
+                result[sensor] = {
+                    'min': row.get('x_min', 0.0),
+                    'max': row.get('x_max', 0.0),
+                    'mean': row.get('mean', 0.0),
+                    'std_dev': row.get('standard_deviation', 0.0),
+                    'skewness': row.get('skewness', 0.0),
+                    'kurtosis': row.get('kurtosis', 0.0),
+                    'frequencies': [row.get(f'frequency{i}', 0.0) for i in range(1, 6)],
+                    'amplitudes': [row.get(f'amplitude{i}', 0.0) for i in range(1, 6)],
+                    'timestamp': row.get('created_at').isoformat() if isinstance(row.get('created_at'), dt.datetime) else row.get('created_at')
+                }
+                logger.info(f"✓ Fetched latest {sensor} stats (using helper)")
+            else:
                 result[sensor] = None
-        
-        conn.close()
-        
+                logger.info(f"✗ No data found for {sensor}")
+                
         return jsonify({
             'success': True,
             'data': result,
@@ -1821,8 +1965,6 @@ def get_latest_db_statistics():
         
     except Exception as e:
         logger.error(f"Error fetching latest statistics: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': str(e)

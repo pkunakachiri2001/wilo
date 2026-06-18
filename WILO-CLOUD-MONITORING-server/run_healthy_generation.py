@@ -56,19 +56,24 @@ def main():
     generator = HealthyGenerator()
     
     # Save the database connection wrapper details
-    try:
-        from database import get_connection
-        conn = get_connection()
-        # Verify connection
-        cur = conn.cursor()
-        cur.execute("SELECT 1")
-        cur.fetchone()
-        conn.close()
-        logger.info("✅ Database connection verified.")
-    except Exception as e:
-        logger.error(f"❌ Database connection failed: {e}")
-        logger.error("Ensure DATABASE_URL is set in your .env file.")
-        sys.exit(1)
+    # Save the database connection wrapper details
+    import os
+    if os.getenv('LOCAL_ONLY') == 'true':
+        logger.info("💾 Running in LOCAL-ONLY mode. Bypassing database connection check.")
+    else:
+        try:
+            from database import get_connection
+            conn = get_connection()
+            # Verify connection
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            conn.close()
+            logger.info("✅ Database connection verified.")
+        except Exception as e:
+            logger.error(f"❌ Database connection failed: {e}")
+            logger.error("Ensure DATABASE_URL is set in your .env file.")
+            sys.exit(1)
 
     success_count = 0
     try:

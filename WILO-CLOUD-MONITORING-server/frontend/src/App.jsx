@@ -43,7 +43,9 @@ ChartJS.register(
 );
 
 // Determine API base URL - always use Render for backend, frontend runs locally
-const API_BASE_URL = 'https://wilo-cloud-monitoring.onrender.com';
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:5001'
+  : 'https://wilo-cloud-monitoring.onrender.com';
 
 const SENSORS = ['acceleration', 'current', 'audio'];
 const MODES = [
@@ -798,8 +800,151 @@ function EnhancedStatisticsTable({ dbStats, selectedSensor, mode }) {
 
 
 
+// ============================================================
+// ANOMALY DETECTION PANEL
+// ============================================================
+/**
+ * AnomalyDetectionPanel
+ * Displays the Isolation Forest result for the active simulation or latest data snapshot.
+ * Fetched from GET /api/anomaly-score dynamically.
+ */
+function AnomalyDetectionPanel({ anomalyResult, loading }) {
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden border-l-4 border-violet-500">
+        <div className="bg-gradient-to-r from-violet-700 via-purple-600 to-indigo-700 px-6 py-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">🤖 AI Anomaly Detection</h3>
+          <p className="text-xs text-violet-200 mt-1">Isolation Forest · Real-time analysis</p>
+        </div>
+        <div className="p-8 flex items-center justify-center">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-violet-400 border-t-transparent mb-3"></div>
+            <p className="text-slate-500 text-sm font-medium">Analysing sensor snapshot…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  if (!anomalyResult || anomalyResult.status === 'model_not_ready') {
+    return (
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden border-l-4 border-slate-400">
+        <div className="bg-gradient-to-r from-violet-700 via-purple-600 to-indigo-700 px-6 py-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">🤖 AI Anomaly Detection</h3>
+          <p className="text-xs text-violet-200 mt-1">Isolation Forest · Real-time analysis</p>
+        </div>
+        <div className="p-6 text-center text-slate-400">
+          <p className="text-2xl mb-2">⚙️</p>
+          <p className="text-sm font-medium">Model not yet loaded</p>
+          <p className="text-xs mt-1">Upload sensor data to activate</p>
+        </div>
+      </div>
+    );
+  }
 
+  const isAnomaly  = anomalyResult.is_anomaly;
+  const confidence = anomalyResult.confidence ?? 0;
+  const score      = anomalyResult.anomaly_score;
+  const nSensors   = anomalyResult.n_sensors_used ?? 0;
+
+  // Colour palette based on result
+  const palette = isAnomaly
+    ? { bg: 'from-red-700 via-rose-700 to-orange-700', border: 'border-red-500',
+        badge: 'bg-red-100 text-red-800 border border-red-300',
+        bar: 'bg-red-500', barBg: 'bg-red-100',
+        icon: '🚨', label: 'ANOMALY DETECTED',
+        msgBg: 'bg-red-50', msgText: 'text-red-800',
+        msg: 'The Isolation Forest model has flagged this sensor snapshot as an anomaly. Please inspect your machinery — vibration, current draw, or acoustic signature may indicate early-stage equipment degradation.',
+        scoreColor: 'text-red-600' }
+    : { bg: 'from-emerald-700 via-teal-700 to-green-700', border: 'border-emerald-500',
+        badge: 'bg-emerald-100 text-emerald-800 border border-emerald-300',
+        bar: 'bg-emerald-500', barBg: 'bg-emerald-100',
+        icon: '✅', label: 'OPERATING NORMALLY',
+        msgBg: 'bg-emerald-50', msgText: 'text-emerald-800',
+        msg: 'All sensor readings are within healthy operating bounds. The machine is running normally — no anomaly detected at this time.',
+        scoreColor: 'text-emerald-600' };
+
+  // Map raw score to a visual 0-100 gauge percentage
+  // Score ranges roughly -0.55 (very anomalous) to 0.1 (very normal)
+  const gaugeRaw = score !== null ? Math.max(0, Math.min(100, ((score + 0.6) / 0.7) * 100)) : 50;
+  const gaugeNormal = Math.round(gaugeRaw);  // higher = more normal
+
+  return (
+    <div className={`bg-white rounded-xl shadow-lg overflow-hidden border-l-4 ${palette.border} transition-all duration-500`}>
+      {/* Header */}
+      <div className={`bg-gradient-to-r ${palette.bg} px-6 py-4`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">🤖 AI Anomaly Detection</h3>
+            <p className="text-xs text-white/70 mt-1">Isolation Forest · Real-time analysis</p>
+          </div>
+          <span className={`text-3xl animate-bounce`}>{palette.icon}</span>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Status Badge */}
+        <div className="flex items-center justify-between">
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${palette.badge}`}>
+            <span className={`inline-block w-2 h-2 rounded-full ${isAnomaly ? 'bg-red-500' : 'bg-emerald-500'} animate-pulse`}></span>
+            {palette.label}
+          </span>
+          <span className="text-xs text-slate-400 font-mono">{nSensors}/3 sensors</span>
+        </div>
+
+        {/* Score Gauge Bar */}
+        <div>
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-xs font-semibold text-slate-600">Health Gauge</span>
+            <span className={`text-xs font-bold ${palette.scoreColor}`}>
+              {score !== null ? `Score: ${score.toFixed(4)}` : 'N/A'}
+            </span>
+          </div>
+          <div className={`w-full h-3 rounded-full ${palette.barBg} overflow-hidden`}>
+            <div
+              className={`h-3 rounded-full ${palette.bar} transition-all duration-1000 ease-out`}
+              style={{ width: `${gaugeNormal}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-1">
+            <span className="text-[10px] text-slate-400">Anomalous</span>
+            <span className="text-[10px] text-slate-400">Normal</span>
+          </div>
+        </div>
+
+        {/* Confidence Bar */}
+        {isAnomaly && (
+          <div>
+            <div className="flex justify-between items-center mb-1.5">
+              <span className="text-xs font-semibold text-slate-600">Anomaly Confidence</span>
+              <span className="text-xs font-bold text-red-600">{confidence.toFixed(1)}%</span>
+            </div>
+            <div className="w-full h-2.5 rounded-full bg-red-100 overflow-hidden">
+              <div
+                className="h-2.5 rounded-full bg-gradient-to-r from-orange-400 to-red-600 transition-all duration-1000 ease-out"
+                style={{ width: `${confidence}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Message Box */}
+        <div className={`rounded-xl p-4 ${palette.msgBg}`}>
+          <p className={`text-xs leading-relaxed font-medium ${palette.msgText}`}>
+            {palette.msg}
+          </p>
+        </div>
+
+        {/* Timestamp */}
+        {anomalyResult.timestamp && (
+          <p className="text-[10px] text-slate-400 text-right font-mono">
+            Analysed: {new Date(anomalyResult.timestamp).toLocaleTimeString()}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Main Application Component
@@ -848,6 +993,10 @@ function App() {
 
 
   
+  // Anomaly detection state
+  const [anomalyResult, setAnomalyResult] = useState(null);
+  const [anomalyLoading, setAnomalyLoading] = useState(false);
+
   // Countdown timer for next data point (30-second intervals)
   const [countdownSeconds, setCountdownSeconds] = useState(0);
   const [failureInfoDisplay, setFailureInfoDisplay] = useState(null);
@@ -1005,6 +1154,25 @@ function App() {
     }
   };
 
+  // ---- Anomaly score fetch ----
+  const fetchAnomalyScore = async () => {
+    setAnomalyLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/anomaly-score`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setAnomalyResult(data);
+        console.log('🤖 Anomaly result:', data);
+      }
+    } catch (err) {
+      console.warn('Anomaly score fetch failed:', err);
+    } finally {
+      setAnomalyLoading(false);
+    }
+  };
+
+
+
   // Effects (unchanged)
   useEffect(() => {
     fetchSensorData(mode);
@@ -1021,6 +1189,7 @@ function App() {
   // NEW: Fetch database statistics on mount
   useEffect(() => {
     fetchDatabaseStats();
+    fetchAnomalyScore();
     // Refresh database stats every 2 hours (same as sensor data)
     const interval = setInterval(fetchDatabaseStats, 2 * 60 * 60 * 1000);
     return () => clearInterval(interval);
@@ -1052,6 +1221,7 @@ function App() {
                 fetchDatabaseStats();
                 fetchFileHistory(selectedSensor);
                 fetchEvents();
+                fetchAnomalyScore();   // re-score after new data arrives
               }
               return result.timestamp;
             });
@@ -1131,6 +1301,9 @@ function App() {
           const current = await currentRes.json();
           setFaultCurrentData(current);
         }
+        
+        // Fetch anomaly score dynamically in sync with simulation curves
+        fetchAnomalyScore();
         
         // Reset countdown after successful poll (10 seconds until next)
         setCountdownSeconds(10);
@@ -1361,6 +1534,14 @@ function App() {
                 mode={mode}
               />
 
+
+
+              {/* ANOMALY DETECTION PANEL */}
+              <AnomalyDetectionPanel
+                anomalyResult={anomalyResult}
+                loading={anomalyLoading}
+              />
+
               {/* Fullscreen modal */}
               <FullscreenModal open={modalOpen} onClose={closeModal} title={modalTitle}>
                 {modalContent}
@@ -1519,6 +1700,8 @@ function App() {
         onEventDescriptionChange={setEventDescription}
         onSubmit={handleCreateEvent}
       />
+
+
     </div>
   );
 }
