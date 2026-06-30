@@ -368,10 +368,11 @@ def process_csv_from_memory(file_obj, filename):
         ts_idx = val_idx = None
         for i, col in enumerate(header):
             cl = col.strip().lower()
-            if cl == 'timestamp': ts_idx = i
-            elif cl == 'value':   val_idx = i
+            if cl in ('timestamp', 'time (s)'): ts_idx = i
+            elif cl in ('value', 'az (m/s2)'):   val_idx = i
         if ts_idx is None or val_idx is None:
             return [], [], 0
+        now_ts = time.time() * 1000  # current time in ms
         for line in lines[1:]:
             if not line.strip():
                 continue
@@ -384,7 +385,11 @@ def process_csv_from_memory(file_obj, filename):
                     ts = dt.datetime.fromisoformat(ts_str.replace('Z', '+00:00')).timestamp() * 1000
                 else:
                     ts_val = float(ts_str)
-                    ts = ts_val * 1000 if ts_val < 1e11 else ts_val
+                    # Support relative offsets in seconds by anchoring to current time
+                    if ts_val < 100000:
+                        ts = now_ts + (ts_val * 1000)
+                    else:
+                        ts = ts_val * 1000 if ts_val < 1e11 else ts_val
                 timestamps.append(ts)
                 values.append(float(parts[val_idx].strip()))
             except (ValueError, IndexError):
@@ -427,9 +432,11 @@ def validate_csv_file(file):
         lines = content.strip().split('\n')
         if len(lines) < 2:
             return {'valid': False, 'error': 'No data rows'}
-        header = [c.strip() for c in lines[0].split(',')]
-        if 'timestamp' not in header or 'value' not in header:
-            return {'valid': False, 'error': 'Missing columns: timestamp, value'}
+        header = [c.strip().lower() for c in lines[0].split(',')]
+        has_time = any(h in header for h in ('timestamp', 'time (s)'))
+        has_val = any(h in header for h in ('value', 'az (m/s2)'))
+        if not has_time or not has_val:
+            return {'valid': False, 'error': 'Missing columns: timestamp (or Time (s)), value (or Az (m/s2))'}
         rc = sum(1 for l in lines[1:] if l.strip())
         if rc == 0:
             return {'valid': False, 'error': 'No valid data rows'}
