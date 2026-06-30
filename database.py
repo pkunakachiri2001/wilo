@@ -1,5 +1,3 @@
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import os
 import json
 from dotenv import load_dotenv
@@ -8,6 +6,22 @@ import time
 from datetime import datetime, timezone
 import atexit
 import threading
+
+# Force local-only mode to prevent any attempt to connect to the database (Neon)
+os.environ['LOCAL_ONLY'] = 'true'
+
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    _PSYCOPG2_AVAILABLE = True
+except ImportError:
+    _PSYCOPG2_AVAILABLE = False
+    class DummyOperationalError(Exception):
+        pass
+    class Psycopg2Mock:
+        OperationalError = DummyOperationalError
+    psycopg2 = Psycopg2Mock()
+    RealDictCursor = None
 
 load_dotenv()
 
@@ -308,14 +322,76 @@ def save_statistics(sensor_name, mode, stats_dict, frequencies, amplitudes):
         if conn:
             conn.close()
 
+def _read_latest_locally(table_name, filter_fn=None):
+    """
+    Read the latest row from local storage (jsonl file) matching the filter function.
+    Reads the file backwards for high performance.
+    """
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        data_dir = os.path.join(base_dir, 'data')
+        file_path = os.path.join(data_dir, f"{table_name}.jsonl")
+        
+        if not os.path.exists(file_path):
+            data_dir_cap = os.path.join(base_dir, 'Data')
+            file_path = os.path.join(data_dir_cap, f"{table_name}.jsonl")
+            if not os.path.exists(file_path):
+                return None
+                
+        with open(file_path, 'rb') as f:
+            try:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+            except OSError:
+                return None
+                
+            block_size = 262144  # 256 KB blocks
+            data = b""
+            position = size
+            
+            while position > 0:
+                grab = min(block_size, position)
+                position -= grab
+                f.seek(position, os.SEEK_SET)
+                chunk = f.read(grab)
+                data = chunk + data
+                
+                lines = data.split(b'\n')
+                
+                # Keep the incomplete first line for the next iteration
+                if position > 0:
+                    data = lines[0]
+                    lines_to_check = lines[1:]
+                else:
+                    lines_to_check = lines
+                    
+                # Search backwards through lines in this chunk
+                for line_bytes in reversed(lines_to_check):
+                    line = line_bytes.decode('utf-8', errors='ignore').strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                        if filter_fn is None or filter_fn(row):
+                            return row
+                    except Exception:
+                        continue
+        return None
+    except Exception as e:
+        logger.error(f"Error reading local storage for {table_name}: {e}")
+        return None
+
 def get_latest_statistics(sensor_name):
-    """Retrieve latest statistics from database"""
+    """Retrieve latest statistics from database with local jsonl fallback"""
+    table_name = sensor_name.lower()
+    
+    if os.getenv('LOCAL_ONLY') == 'true':
+        return _read_latest_locally(table_name)
+        
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        table_name = sensor_name.lower()
         
         # Validate table name
         valid_tables = ['acceleration', 'current', 'audio']
@@ -334,8 +410,8 @@ def get_latest_statistics(sensor_name):
         return dict(result) if result else None
         
     except Exception as e:
-        logger.error(f"Error retrieving statistics for {sensor_name}: {e}")
-        return None
+        logger.warning(f"Database statistics unavailable for {sensor_name}, falling back to local files: {e}")
+        return _read_latest_locally(table_name)
     finally:
         if conn:
             conn.close()
@@ -1138,12 +1214,32 @@ def get_latest_raw_datapoints(sensor_name, batch='max'):
     """
     Retrieve the latest raw datapoints for a sensor and batch type.
     """
+    table_name = f"{sensor_name.lower()}_datapoints"
+    
+    def format_local_row(local_row):
+        if not local_row:
+            return None
+        ts = local_row.get('timestamp')
+        if hasattr(ts, 'isoformat'):
+            ts_str = ts.isoformat()
+        else:
+            ts_str = ts
+        return {
+            'timestamp': ts_str,
+            'batch': local_row['batch'],
+            'datapoints': list(local_row['datapoints']),
+            'datapoint_timestamps': [int(t) for t in local_row['datapoint_timestamps']]
+        }
+
+    if os.getenv('LOCAL_ONLY') == 'true':
+        local_row = _read_latest_locally(table_name, lambda r: r.get('batch') == batch)
+        return format_local_row(local_row)
+
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
-        table_name = f"{sensor_name.lower()}_datapoints"
         valid_tables = ['acceleration_datapoints', 'current_datapoints', 'audio_datapoints']
         if table_name not in valid_tables:
             raise ValueError(f"Invalid sensor table: {table_name}")
@@ -1169,8 +1265,9 @@ def get_latest_raw_datapoints(sensor_name, batch='max'):
             }
         return None
     except Exception as e:
-        logger.error(f"Error retrieving raw datapoints for {sensor_name} ({batch}): {e}")
-        return None
+        logger.warning(f"Database raw datapoints unavailable for {sensor_name} ({batch}), falling back to local files: {e}")
+        local_row = _read_latest_locally(table_name, lambda r: r.get('batch') == batch)
+        return format_local_row(local_row)
     finally:
         if conn:
             conn.close()
@@ -1241,94 +1338,75 @@ def create_normal_operations_table_if_not_exists(conn=None):
 def save_normal_operations_data(sensor_name, mode, stats_dict, frequencies, amplitudes, conn=None):
     """
     Save healthy normal baseline features to the normal_operations table in Neon.
-    
-    Args:
-        sensor_name: 'acceleration', 'current', or 'audio'
-        mode: 'max', 'min', or 'combined'
-        stats_dict: Dict containing metrics (mean, std_dev, range, variance, skewness, kurtosis, rms, peak, crest_factor, load_factor)
-        frequencies: List of top 5 FFT frequencies
-        amplitudes: List of top 5 FFT amplitudes
-        conn: Optional active database connection
+    (Disabled - normal operations file is redundant)
     """
-    # Ensure we have exactly 5 frequencies and amplitudes
-    freqs = (frequencies + [0] * 5)[:5]
-    amps = (amplitudes + [0] * 5)[:5]
-    
-    # Mirror locally
-    row_dict = {
-        'timestamp': datetime.now(timezone.utc),
-        'sensor_type': sensor_name.lower(),
-        'file_type': mode,
-        'x_min': stats_dict.get('min', 0.0),
-        'x_max': stats_dict.get('max', 0.0),
-        'mean': stats_dict.get('mean', 0.0),
-        'standard_deviation': stats_dict.get('std_dev', 0.0),
-        'range': stats_dict.get('range', 0.0),
-        'variance': stats_dict.get('variance', 0.0),
-        'skewness': stats_dict.get('skewness', 0.0),
-        'kurtosis': stats_dict.get('kurtosis', 0.0),
-        'rms': stats_dict.get('rms', 0.0),
-        'peak': stats_dict.get('peak', 0.0),
-        'crest_factor': stats_dict.get('crest_factor', 0.0),
-        'load_factor': stats_dict.get('load_factor', 1.0),
-        'frequency1': freqs[0], 'frequency2': freqs[1], 'frequency3': freqs[2], 'frequency4': freqs[3], 'frequency5': freqs[4],
-        'amplitude1': amps[0], 'amplitude2': amps[1], 'amplitude3': amps[2], 'amplitude4': amps[3], 'amplitude5': amps[4]
-    }
-    _save_locally('normal_operations', row_dict)
-    
-    if os.getenv('LOCAL_ONLY') == 'true':
-        return True
+    return True
 
-    should_close = False
-    if conn is None:
-        conn = get_normal_ops_connection()
-        should_close = True
+
+def get_historical_stats_locally(sensor_name, limit=25):
+    """
+    Retrieve historical stats locally from JSONL files, matching WHERE file_type = 'max'
+    ordered by created_at DESC limit 25.
+    """
     try:
-        # Ensure table exists
-        create_normal_operations_table_if_not_exists(conn)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        data_dir = os.path.join(base_dir, 'data')
+        file_path = os.path.join(data_dir, f"{sensor_name.lower()}.jsonl")
         
-        cur = conn.cursor()
+        if not os.path.exists(file_path):
+            data_dir_cap = os.path.join(base_dir, 'Data')
+            file_path = os.path.join(data_dir_cap, f"{sensor_name.lower()}.jsonl")
+            if not os.path.exists(file_path):
+                return []
+                
+        matching_rows = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                    if row.get('file_type') == 'max':
+                        matching_rows.append(row)
+                except Exception:
+                    continue
         
-        query = """
-            INSERT INTO normal_operations 
-            (sensor_type, file_type, x_min, x_max, mean, standard_deviation, range, variance, skewness, kurtosis,
-             rms, peak, crest_factor, load_factor,
-             frequency1, frequency2, frequency3, frequency4, frequency5,
-             amplitude1, amplitude2, amplitude3, amplitude4, amplitude5)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s)
-        """
-        cur.execute(query, (
-            sensor_name.lower(),
-            mode,
-            stats_dict.get('min', 0.0),
-            stats_dict.get('max', 0.0),
-            stats_dict.get('mean', 0.0),
-            stats_dict.get('std_dev', 0.0),
-            stats_dict.get('range', 0.0),
-            stats_dict.get('variance', 0.0),
-            stats_dict.get('skewness', 0.0),
-            stats_dict.get('kurtosis', 0.0),
-            stats_dict.get('rms', 0.0),
-            stats_dict.get('peak', 0.0),
-            stats_dict.get('crest_factor', 0.0),
-            stats_dict.get('load_factor', 1.0),
-            freqs[0], freqs[1], freqs[2], freqs[3], freqs[4],
-            amps[0], amps[1], amps[2], amps[3], amps[4]
-        ))
+        # Take the last `limit` elements (which are latest because they are appended at the end)
+        latest_rows = matching_rows[-limit:]
         
-        conn.commit()
-        logger.info(f"✓ Saved normal operations stats for {sensor_name} ({mode}) to normal_operations table")
-        return True
+        # Format rows like the database query does
+        formatted_rows = []
+        for row in latest_rows:
+            # Parse created_at ISO timestamp or format
+            created_at_val = row.get('created_at')
+            formatted_rows.append({
+                'created_at': created_at_val,
+                'x_min': row.get('x_min', 0.0),
+                'x_max': row.get('x_max', 0.0),
+                'mean': row.get('mean', 0.0),
+                'standard_deviation': row.get('standard_deviation', 0.0),
+                'range': row.get('range', 0.0),
+                'skewness': row.get('skewness', 0.0),
+                'kurtosis': row.get('kurtosis', 0.0),
+                'rms': row.get('rms', 0.0),
+                'peak': row.get('peak', 0.0),
+                'crest_factor': row.get('crest_factor', 0.0),
+                'load_factor': row.get('load_factor', 1.0),
+                'frequency1': row.get('frequency1', 0.0),
+                'frequency2': row.get('frequency2', 0.0),
+                'frequency3': row.get('frequency3', 0.0),
+                'frequency4': row.get('frequency4', 0.0),
+                'frequency5': row.get('frequency5', 0.0),
+                'amplitude1': row.get('amplitude1', 0.0),
+                'amplitude2': row.get('amplitude2', 0.0),
+                'amplitude3': row.get('amplitude3', 0.0),
+                'amplitude4': row.get('amplitude4', 0.0),
+                'amplitude5': row.get('amplitude5', 0.0),
+                'file_type': row.get('file_type')
+            })
+        return formatted_rows
     except Exception as e:
-        logger.error(f"Error saving normal operations statistics: {e}")
-        if conn:
-            conn.rollback()
-        return False
-    finally:
-        if should_close and conn:
-            conn.close()
+        logger.error(f"Error reading local stats for {sensor_name}: {e}")
+        return []
 
 

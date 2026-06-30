@@ -7,7 +7,7 @@ echo.
 
 REM Start backend in a new terminal window
 echo Starting Backend (Flask) on port 5001...
-start "Backend - Flask" cmd /k "cd /d %~dp0 && python app.py"
+start "Backend - Flask" cmd /k "cd /d %~dp0.. && \"C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe\" app.py"
 
 REM Wait a moment for backend to initialize
 timeout /t 2 /nobreak > nul

@@ -9,7 +9,9 @@ import sys
 import logging
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+# Make both server and project root directories importable
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fault_generators.motor_stall_generator import MotorStallGenerator
 from fault_generators.pump_cavitation_generator import PumpCavitationGenerator

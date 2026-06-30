@@ -194,23 +194,21 @@ def score_snapshot(sensor_stats: dict) -> dict:
 
         # Scale → predict
         X_scaled = _standard_scaler.transform(X)
-        prediction = int(_isolation_forest.predict(X_scaled)[0])     # 1 or -1
-        raw_score  = float(_isolation_forest.decision_function(X_scaled)[0])
+        raw_score = float(_isolation_forest.decision_function(X_scaled)[0])
 
-        # decision_function returns scores roughly in [-0.5, 0.5]
-        # Normalise to a 0–100 "anomaly confidence" where 100 = definitely anomalous
-        # threshold is model offset_ (≈ -0.54 for this model)
-        threshold = float(_isolation_forest.offset_)
-        # Clamp raw_score to a sensible window for display
-        clamped = max(threshold * 2, min(0.0, raw_score))
-        # Scale so that threshold → 50 and threshold*2 → 100
-        if threshold != 0:
-            confidence = min(100.0, max(0.0, (clamped / threshold) * 100))
-        else:
-            confidence = 0.0
-
-        is_anomaly = (prediction == -1)
+        # The natural decision boundary of decision_function is ALWAYS 0.0:
+        #   raw_score > 0  → inlier  (normal)
+        #   raw_score < 0  → outlier (anomaly)
+        # Using offset_ is unreliable across sklearn versions (model was trained
+        # on 1.6.1 but we may be running 1.9+).  The sign of raw_score is stable.
+        is_anomaly = raw_score < 0.0
         status = "anomaly" if is_anomaly else "normal"
+
+        # Confidence: how far the point is from the 0.0 boundary, normalised to 0–100.
+        # A score of -0.5 (deep outlier) → 100%, score of +0.5 (deep inlier) → 0%.
+        # Clamp to the expected ±0.5 range of decision_function output.
+        _SCORE_RANGE = 0.5
+        confidence = min(100.0, max(0.0, (-raw_score / _SCORE_RANGE) * 100)) if is_anomaly else 0.0
 
         return {
             "anomaly_score":  round(raw_score, 6),

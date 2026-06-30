@@ -25,7 +25,7 @@ import logging
 from pathlib import Path
 
 # Make the project root importable (database, fft_analysis, event_manager live there)
-_BASE_DIR = Path(__file__).resolve().parent.parent
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(_BASE_DIR) not in sys.path:
     sys.path.insert(0, str(_BASE_DIR))
 
@@ -178,9 +178,9 @@ class BaseGenerator:
         self.fault_name = fault_name
         self.logger = logging.getLogger(f"Generator-{fault_name}")
         
-        # Setup data directory
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.data_dir = os.path.join(base_dir, 'Data', fault_name)
+        # Setup data directory relative to project root (directly to root Data/ folder)
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.data_dir = os.path.join(base_dir, 'Data')
         self.events_dir = os.path.join(base_dir, 'Events', fault_name)
         os.makedirs(self.data_dir, exist_ok=True)
         os.makedirs(self.events_dir, exist_ok=True)
@@ -402,18 +402,9 @@ class BaseGenerator:
         # Save statistics
         self._save_interval_stats(accel_data, current_data, audio_data)
         
-        # Write all 6 files
-        self.write_csv_file('max_acceleration.csv', timestamps, accel_data)
-        self.write_csv_file('min_acceleration.csv', timestamps, accel_data)
-        self.write_csv_file('max_current.csv', timestamps, current_data)
-        self.write_csv_file('min_current.csv', timestamps, current_data)
-        self.write_csv_file('max_audio.csv', timestamps, audio_data)
-        self.write_csv_file('min_audio.csv', timestamps, audio_data)
-        
         state_str = 'SYSTEM_FAILURE' if self.system_failure_state else 'NORMAL'
         self.logger.info(
-            f"Interval {self.interval_count}: Generated 6 files | "
-            f"State: {state_str}"
+            f"Interval {self.interval_count} | State: {state_str}"
         )
 
         # -- Save statistics and raw datapoints to Neon database in real-time --

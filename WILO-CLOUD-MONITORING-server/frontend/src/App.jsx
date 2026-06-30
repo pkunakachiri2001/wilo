@@ -811,15 +811,22 @@ function EnhancedStatisticsTable({ dbStats, selectedSensor, mode }) {
 function AnomalyDetectionPanel({ anomalyResult, loading }) {
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden border-l-4 border-violet-500">
-        <div className="bg-gradient-to-r from-violet-700 via-purple-600 to-indigo-700 px-6 py-4">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">🤖 AI Anomaly Detection</h3>
-          <p className="text-xs text-violet-200 mt-1">Isolation Forest · Real-time analysis</p>
+      <div className="backdrop-blur-md bg-slate-900/40 border border-slate-700/30 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-300 w-full">
+        <div className="bg-gradient-to-r from-violet-955/80 via-purple-900/60 to-indigo-955/80 px-6 py-5 border-b border-white/5">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-violet-500"></span>
+            </span>
+            🤖 AI Anomaly Detection
+          </h3>
+          <p className="text-xs text-violet-300/80 mt-1 font-medium">Isolation Forest & XGBoost Classifier</p>
         </div>
-        <div className="p-8 flex items-center justify-center">
+        <div className="p-10 flex items-center justify-center">
           <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-violet-400 border-t-transparent mb-3"></div>
-            <p className="text-slate-500 text-sm font-medium">Analysing sensor snapshot…</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-violet-500/20 border-t-violet-400 mb-4"></div>
+            <p className="text-slate-300 text-sm font-semibold tracking-wide">Analysing machine state...</p>
+            <p className="text-slate-500 text-xs mt-1">Applying multi-sensor model inference</p>
           </div>
         </div>
       </div>
@@ -828,123 +835,185 @@ function AnomalyDetectionPanel({ anomalyResult, loading }) {
 
   if (!anomalyResult || anomalyResult.status === 'model_not_ready') {
     return (
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden border-l-4 border-slate-400">
-        <div className="bg-gradient-to-r from-violet-700 via-purple-600 to-indigo-700 px-6 py-4">
+      <div className="backdrop-blur-md bg-slate-900/40 border border-slate-700/30 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden transition-all duration-300 w-full">
+        <div className="bg-gradient-to-r from-slate-950/80 via-slate-900/60 to-slate-950/80 px-6 py-5 border-b border-white/5">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">🤖 AI Anomaly Detection</h3>
-          <p className="text-xs text-violet-200 mt-1">Isolation Forest · Real-time analysis</p>
+          <p className="text-xs text-slate-400 mt-1 font-medium">Isolation Forest & XGBoost Classifier</p>
         </div>
-        <div className="p-6 text-center text-slate-400">
-          <p className="text-2xl mb-2">⚙️</p>
-          <p className="text-sm font-medium">Model not yet loaded</p>
-          <p className="text-xs mt-1">Upload sensor data to activate</p>
+        <div className="p-8 text-center text-slate-400">
+          <p className="text-3xl mb-3">⚙️</p>
+          <p className="text-sm font-semibold text-slate-300">Model not yet initialized</p>
+          <p className="text-xs text-slate-500 mt-1">Upload sensor data to activate AI diagnostics</p>
         </div>
       </div>
     );
   }
 
-  const isAnomaly  = anomalyResult.is_anomaly;
-  const confidence = anomalyResult.confidence ?? 0;
-  const score      = anomalyResult.anomaly_score;
-  const nSensors   = anomalyResult.n_sensors_used ?? 0;
+  const isAnomaly = anomalyResult.is_anomaly;
+  const score = anomalyResult.anomaly_score;
+  const nSensors = anomalyResult.n_sensors_used ?? 0;
+  const predictedFault = anomalyResult.predicted_fault || 'Classifier Error: Model Not Ready';
+  const classifierConfidence = anomalyResult.classifier_confidence ?? 0.0;
+  const faultDistribution = anomalyResult.fault_distribution || [];
+  const isClassifierError = predictedFault.toLowerCase().includes('error');
 
-  // Colour palette based on result
-  const palette = isAnomaly
-    ? { bg: 'from-red-700 via-rose-700 to-orange-700', border: 'border-red-500',
-        badge: 'bg-red-100 text-red-800 border border-red-300',
-        bar: 'bg-red-500', barBg: 'bg-red-100',
-        icon: '🚨', label: 'ANOMALY DETECTED',
-        msgBg: 'bg-red-50', msgText: 'text-red-800',
-        msg: 'The Isolation Forest model has flagged this sensor snapshot as an anomaly. Please inspect your machinery — vibration, current draw, or acoustic signature may indicate early-stage equipment degradation.',
-        scoreColor: 'text-red-600' }
-    : { bg: 'from-emerald-700 via-teal-700 to-green-700', border: 'border-emerald-500',
-        badge: 'bg-emerald-100 text-emerald-800 border border-emerald-300',
-        bar: 'bg-emerald-500', barBg: 'bg-emerald-100',
-        icon: '✅', label: 'OPERATING NORMALLY',
-        msgBg: 'bg-emerald-50', msgText: 'text-emerald-800',
-        msg: 'All sensor readings are within healthy operating bounds. The machine is running normally — no anomaly detected at this time.',
-        scoreColor: 'text-emerald-600' };
+  // Theme based on state
+  const isNormal = !isAnomaly;
+  const theme = isNormal
+    ? {
+        bgHeader: 'from-emerald-950/80 via-teal-900/60 to-green-950/80',
+        badgeClass: 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20',
+        glowClass: 'shadow-[0_0_30px_rgba(16,185,129,0.15)] border-emerald-500/20',
+        dotColor: 'bg-emerald-400',
+        icon: '✅',
+        label: 'SYSTEM HEALTHY',
+        msg: 'All industrial sensor streams are matching healthy training parameters. The machinery is running within normal bounds — no operational anomalies detected.',
+        msgBg: 'bg-emerald-500/5 border border-emerald-500/10 text-emerald-200/90',
+        gaugeBar: 'bg-gradient-to-r from-teal-500 to-emerald-400',
+        gaugeBg: 'bg-slate-950/40'
+      }
+    : {
+        bgHeader: 'from-red-955/90 via-rose-900/70 to-orange-955/90',
+        badgeClass: 'bg-red-500/10 text-red-300 border border-red-500/20 animate-pulse',
+        glowClass: 'shadow-[0_0_30px_rgba(239,68,68,0.25)] border-red-500/20',
+        dotColor: 'bg-red-500',
+        icon: '🚨',
+        label: 'ANOMALY DETECTED',
+        msg: 'The Isolation Forest detected statistical deviation. XGBoost classifier has identified the fingerprint of the failure type below.',
+        msgBg: 'bg-red-500/5 border border-red-500/10 text-red-200/90',
+        gaugeBar: 'bg-gradient-to-r from-orange-500 to-red-500',
+        gaugeBg: 'bg-slate-950/40'
+      };
 
-  // Map raw score to a visual 0-100 gauge percentage
-  // Score ranges roughly -0.55 (very anomalous) to 0.1 (very normal)
-  const gaugeRaw = score !== null ? Math.max(0, Math.min(100, ((score + 0.6) / 0.7) * 100)) : 50;
-  const gaugeNormal = Math.round(gaugeRaw);  // higher = more normal
+  // Convert raw Isolation Forest score to 0-100 percentage
+  const gaugePercent = score !== null ? Math.max(0, Math.min(100, Math.round(((score + 0.6) / 0.7) * 100))) : 50;
 
   return (
-    <div className={`bg-white rounded-xl shadow-lg overflow-hidden border-l-4 ${palette.border} transition-all duration-500`}>
+    <div className={`backdrop-blur-md bg-slate-900/40 border rounded-2xl overflow-hidden transition-all duration-700 ${theme.glowClass} w-full`}>
       {/* Header */}
-      <div className={`bg-gradient-to-r ${palette.bg} px-6 py-4`}>
+      <div className={`bg-gradient-to-r ${theme.bgHeader} px-6 py-5 border-b border-white/5`}>
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">🤖 AI Anomaly Detection</h3>
-            <p className="text-xs text-white/70 mt-1">Isolation Forest · Real-time analysis</p>
+            <p className="text-xs text-slate-300/80 mt-1 font-medium">Isolation Forest & XGBoost Classifier</p>
           </div>
-          <span className={`text-3xl animate-bounce`}>{palette.icon}</span>
+          <span className="text-3xl filter drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">{theme.icon}</span>
         </div>
       </div>
 
-      <div className="p-5 space-y-4">
-        {/* Status Badge */}
-        <div className="flex items-center justify-between">
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${palette.badge}`}>
-            <span className={`inline-block w-2 h-2 rounded-full ${isAnomaly ? 'bg-red-500' : 'bg-emerald-500'} animate-pulse`}></span>
-            {palette.label}
-          </span>
-          <span className="text-xs text-slate-400 font-mono">{nSensors}/3 sensors</span>
-        </div>
-
-        {/* Score Gauge Bar */}
-        <div>
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-xs font-semibold text-slate-600">Health Gauge</span>
-            <span className={`text-xs font-bold ${palette.scoreColor}`}>
-              {score !== null ? `Score: ${score.toFixed(4)}` : 'N/A'}
+      <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+        {/* Column 1: Health Index & Status */}
+        <div className="flex flex-col justify-between space-y-4 bg-slate-950/20 p-4 rounded-xl border border-white/5">
+          <div className="flex items-center justify-between">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${theme.badgeClass}`}>
+              <span className={`inline-block w-2.5 h-2.5 rounded-full ${theme.dotColor} shadow-[0_0_8px_currentColor] animate-pulse`}></span>
+              {theme.label}
             </span>
+            <span className="text-xs text-slate-400 font-semibold font-mono">{nSensors}/3 active sensors</span>
           </div>
-          <div className={`w-full h-3 rounded-full ${palette.barBg} overflow-hidden`}>
-            <div
-              className={`h-3 rounded-full ${palette.bar} transition-all duration-1000 ease-out`}
-              style={{ width: `${gaugeNormal}%` }}
-            />
-          </div>
-          <div className="flex justify-between mt-1">
-            <span className="text-[10px] text-slate-400">Anomalous</span>
-            <span className="text-[10px] text-slate-400">Normal</span>
-          </div>
-        </div>
 
-        {/* Confidence Bar */}
-        {isAnomaly && (
           <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <span className="text-xs font-semibold text-slate-600">Anomaly Confidence</span>
-              <span className="text-xs font-bold text-red-600">{confidence.toFixed(1)}%</span>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-bold text-slate-300">Isolation Health Index</span>
+              <span className="text-xs font-bold text-slate-300 font-mono">
+                {score !== null ? `Score: ${score.toFixed(4)}` : 'N/A'}
+              </span>
             </div>
-            <div className="w-full h-2.5 rounded-full bg-red-100 overflow-hidden">
+            <div className={`w-full h-3 rounded-full ${theme.gaugeBg} border border-white/5 overflow-hidden shadow-inner`}>
               <div
-                className="h-2.5 rounded-full bg-gradient-to-r from-orange-400 to-red-600 transition-all duration-1000 ease-out"
-                style={{ width: `${confidence}%` }}
+                className={`h-full rounded-full ${theme.gaugeBar} transition-all duration-1000 ease-out`}
+                style={{ width: `${gaugePercent}%` }}
               />
             </div>
+            <div className="flex justify-between mt-1.5">
+              <span className="text-[10px] text-slate-500 font-bold tracking-wide uppercase">Critical</span>
+              <span className="text-[10px] text-slate-500 font-bold tracking-wide uppercase">Healthy</span>
+            </div>
           </div>
-        )}
-
-        {/* Message Box */}
-        <div className={`rounded-xl p-4 ${palette.msgBg}`}>
-          <p className={`text-xs leading-relaxed font-medium ${palette.msgText}`}>
-            {palette.msg}
-          </p>
         </div>
 
-        {/* Timestamp */}
-        {anomalyResult.timestamp && (
-          <p className="text-[10px] text-slate-400 text-right font-mono">
-            Analysed: {new Date(anomalyResult.timestamp).toLocaleTimeString()}
-          </p>
-        )}
+        {/* Column 2: Diagnostic Analysis Summary */}
+        <div className="flex flex-col justify-between space-y-4 bg-slate-950/20 p-4 rounded-xl border border-white/5">
+          <div className="flex-1 flex flex-col justify-center">
+            <span className="text-[10px] uppercase tracking-widest font-black text-slate-400 font-mono mb-2">Diagnostics Summary</span>
+            <div className={`rounded-xl p-4 flex-1 flex items-center justify-center transition-colors duration-500 ${theme.msgBg}`}>
+              <p className="text-xs leading-relaxed font-semibold">
+                {isAnomaly 
+                  ? (isClassifierError
+                      ? `Anomaly Detected! The system identified a statistical deviation. Note: ${predictedFault}. Immediate diagnostic inspection recommended.`
+                      : `Anomaly Detected! The system identified a statistical deviation. XGBoost predicts a high probability of "${predictedFault}" (${classifierConfidence.toFixed(1)}% confidence). Immediate diagnostic inspection recommended.`)
+                  : theme.msg}
+              </p>
+            </div>
+          </div>
+          {anomalyResult.timestamp && (
+            <p className="text-[10px] text-slate-500 text-right font-bold font-mono tracking-wider">
+              Inference Time: {new Date(anomalyResult.timestamp).toLocaleTimeString()}
+            </p>
+          )}
+        </div>
+
+        {/* Column 3: Classifier Standby or Active Probability Distribution */}
+        <div className="flex flex-col justify-between bg-slate-950/20 p-4 rounded-xl border border-white/5">
+          {isAnomaly ? (
+            <div className="space-y-4 h-full flex flex-col justify-between">
+              <div className="backdrop-blur-xl bg-red-955/20 border border-red-500/20 rounded-xl p-4 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+                <span className="text-[10px] uppercase tracking-widest font-black text-red-400">Classified Fault Diagnosis</span>
+                <h4 className="text-lg font-extrabold text-white mt-1 drop-shadow-md flex items-center gap-2">
+                  🚨 {predictedFault}
+                </h4>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs text-slate-300 font-medium">Confidence:</span>
+                  <span className="text-xs font-black text-red-400 font-mono">{classifierConfidence.toFixed(1)}%</span>
+                </div>
+              </div>
+
+              {/* Probability Distribution */}
+              {faultDistribution.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[10px] uppercase tracking-widest font-black text-slate-400 block">Probability Breakdown</span>
+                  <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
+                    {faultDistribution.slice(0, 3).map((item, index) => (
+                      <div key={item.fault} className="space-y-0.5">
+                        <div className="flex justify-between items-center text-xs font-semibold text-slate-300">
+                          <span className="truncate max-w-[70%]">{item.fault}</span>
+                          <span className="font-mono text-[10px] text-slate-400">{item.probability.toFixed(1)}%</span>
+                        </div>
+                        <div className="w-full h-1 rounded-full bg-slate-950/40 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-1000 ${
+                              index === 0 ? 'bg-gradient-to-r from-red-500 to-rose-400' : 'bg-slate-700'
+                            }`}
+                            style={{ width: `${item.probability}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center text-center h-full min-h-[140px] space-y-2 p-2">
+              <div className="w-12 h-12 rounded-full bg-slate-950/60 border border-slate-800 flex items-center justify-center text-xl shadow-inner relative">
+                <span className="absolute inset-0 rounded-full border border-emerald-500/20 animate-ping"></span>
+                🔍
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-white tracking-wide uppercase">Classifier Standby</h4>
+                <p className="text-[11px] text-slate-400 mt-1 max-w-[200px] mx-auto leading-relaxed">
+                  XGBoost models are monitoring raw streams. Ready to evaluate fault signatures.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
+
+
 
 /**
  * Main Application Component
@@ -1076,7 +1145,51 @@ function App() {
     }
   };
 
-  // Download CSV files generated from event creation
+  const handleStartSimulation = async (faultName) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/start-sequential-faults`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          fault_name: faultName
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to start simulation');
+      }
+      handleFaultSelect(faultName);
+    } catch (err) {
+      console.error('Error starting simulation:', err);
+      alert(`Error starting simulation: ${err.message}`);
+    }
+  };
+
+  const handleStopSimulation = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/stop-sequential-faults`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to stop simulation');
+      }
+      setActiveFault(null);
+      setEventMonitoringActive(false);
+      setFaultTrendData(null);
+      setFaultCurrentData(null);
+      setEventFailureDetected(false);
+      setEventIntervalCount(0);
+      setFailureInfoDisplay(null);
+      setCountdownSeconds(0);
+      setFaultStatusMessage('Simulation stopped');
+    } catch (err) {
+      console.error('Error stopping simulation:', err);
+      alert(`Error stopping simulation: ${err.message}`);
+    }
+  };
 
   // API functions (logic unchanged - fully preserved)
   const fetchSensorData = async (selectedMode = 'max') => {
@@ -1114,9 +1227,9 @@ function App() {
     }
   };
 
-  const fetchFileHistory = async (sensor) => {
+  const fetchFileHistory = async (sensor, fileType = 'max') => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/historical-stats?sensor=${encodeURIComponent(sensor)}&limit=25`);
+      const response = await fetch(`${API_BASE_URL}/api/historical-stats?sensor=${encodeURIComponent(sensor)}&file_type=${fileType}`);
       if (!response.ok) throw new Error('Failed to fetch historical stats');
       
       const result = await response.json();
@@ -1131,14 +1244,14 @@ function App() {
           const formattedDate = item.file_timestamp ? new Date(item.file_timestamp).toLocaleString() : '—';
           return {
             timestamp: formattedDate,
-            maxFile: `max_${sensor}.csv`,
-            minFile: `min_${sensor}.csv`
+            maxFile: `max_${sensor}.jsonl`,
+            minFile: `min_${sensor}.jsonl`
           };
         });
         setFileHistory(virtualHistory);
       }
     } catch (err) {
-      console.error('Error fetching file history from database:', err);
+      console.error('Error fetching file history:', err);
     }
   };
 
@@ -1179,8 +1292,8 @@ function App() {
   }, [mode]);
 
   useEffect(() => {
-    fetchFileHistory(selectedSensor);
-  }, [selectedSensor]);
+    fetchFileHistory(selectedSensor, mode);
+  }, [selectedSensor, mode]);
 
   useEffect(() => {
     fetchEvents();
@@ -1536,11 +1649,7 @@ function App() {
 
 
 
-              {/* ANOMALY DETECTION PANEL */}
-              <AnomalyDetectionPanel
-                anomalyResult={anomalyResult}
-                loading={anomalyLoading}
-              />
+
 
               {/* Fullscreen modal */}
               <FullscreenModal open={modalOpen} onClose={closeModal} title={modalTitle}>
@@ -1558,7 +1667,7 @@ function App() {
                   <div style={{ height: '80vh' }}>
                     <TimeSeriesChart
                       sensor={timeSeriesSensor}
-                      sensorData={sensorData[timeSeriesSensor]?.[mode] || {}}
+                      sensorData={sensorData[timeSeriesSensor] || {}}
                       onSensorChange={handleTimeSeriesSensorChange}
                       faultCurrentData={faultCurrentData}
                       activeFault={activeFault}
@@ -1567,7 +1676,7 @@ function App() {
                 ))}>
                   <TimeSeriesChart 
                     sensor={timeSeriesSensor} 
-                    sensorData={sensorData[timeSeriesSensor]?.[mode] || {}}
+                    sensorData={sensorData[timeSeriesSensor] || {}}
                     onSensorChange={handleTimeSeriesSensorChange}
                     faultCurrentData={faultCurrentData}
                     activeFault={activeFault}
@@ -1620,6 +1729,14 @@ function App() {
                     />
                   </div>
                 </div>
+              </div>
+              
+              {/* AI ANOMALY DETECTION PANEL */}
+              <div className="w-full">
+                <AnomalyDetectionPanel
+                  anomalyResult={anomalyResult}
+                  loading={anomalyLoading}
+                />
               </div>
             </div>
           </div>

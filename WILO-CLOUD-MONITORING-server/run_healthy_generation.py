@@ -94,6 +94,10 @@ def main():
             if not should_continue:
                 logger.warning("Generator signaled to stop.")
                 break
+
+            # Sleep 5 seconds before the next interval
+            import time
+            time.sleep(5)
                 
     except KeyboardInterrupt:
         logger.info("\n⚠️ Generation interrupted by user.")

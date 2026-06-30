@@ -13,7 +13,6 @@ import datetime
 import numpy as np
 from scipy import stats as sp_stats
 from typing import Dict, List, Tuple, Optional
-from database import insert_event_data
 
 
 def _get_expected_frequencies(fault_name: str) -> List[float]:
@@ -69,6 +68,48 @@ class EventManager:
         """
         self.events_dir = events_dir
         self.data_dir = data_dir
+
+    def get_next_fault_id_local(self, event_name: str) -> int:
+        """
+        Scan existing metadata files inside Events/<event_name>/ and also matching files in Events/
+        to find the max fault_id / fault_id_in_database, and return the next ID (starting at 1 if none exist).
+        """
+        import glob
+        import json
+        
+        max_id = 0
+        
+        # 1. Scan subdirectory Events/<event_name>/
+        target_dir = os.path.join(self.events_dir, event_name)
+        if os.path.exists(target_dir):
+            json_files = glob.glob(os.path.join(target_dir, '*.json'))
+            for fpath in json_files:
+                basename = os.path.basename(fpath)
+                if basename in ('stats.json', 'metadata.json'):
+                    continue
+                try:
+                    with open(fpath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        fid = data.get('fault_id') or data.get('fault_id_in_database')
+                        if fid is not None:
+                            max_id = max(max_id, int(fid))
+                except Exception:
+                    continue
+                    
+        # 2. Scan parent directory Events/ for matching filenames (e.g. Motor_Stall_*.json)
+        event_name_safe = event_name.replace(' ', '_').replace('/', '-')
+        parent_json_files = glob.glob(os.path.join(self.events_dir, f"{event_name_safe}_*.json"))
+        for fpath in parent_json_files:
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    fid = data.get('fault_id') or data.get('fault_id_in_database')
+                    if fid is not None:
+                        max_id = max(max_id, int(fid))
+            except Exception:
+                continue
+                
+        return max_id + 1
     
     def _load_all_data_points(self) -> List[Tuple[float, float]]:
         """
@@ -135,247 +176,122 @@ class EventManager:
 
     def _load_all_sensor_data(self, start_time_iso: Optional[str] = None) -> Dict[str, List[Dict]]:
         """
-        Load aggregated feature data for ALL sensors from database tables.
+        Load aggregated feature data for ALL sensors from local JSONL files in self.data_dir.
         If start_time_iso is provided, fetches only records created since then (representing the current generator run).
         Otherwise, defaults to fetching the last 30 MAX-mode rows per sensor.
 
         Returns:
             Dict mapping sensor names to lists of feature data:
             {
-                'acceleration': [
-                    {'timestamp': created_at, 'mean': val, 'max': val, 'min': val,
-                     'std_dev': val, 'variance': val, 'skewness': val, 'kurtosis': val,
-                     'frequency1-5': [...], 'amplitude1-5': [...]},
-                    ...
-                ],
+                'acceleration': [...],
                 'current': [...],
                 'audio': [...]
             }
         """
-        from database import get_connection
         import logging
         import datetime
-
         logger = logging.getLogger(__name__)
 
         sensor_data = {'acceleration': [], 'current': [], 'audio': []}
-        table_names = {
-            'acceleration': 'acceleration',
-            'current': 'current',
-            'audio': 'audio'
-        }
-
-        # Calculate safety buffered start time for clock drift / desync (Flaw 2)
+        
+        # Calculate safety buffered start time for clock drift / desync
         query_start_time = None
         if start_time_iso:
             try:
                 dt_start = datetime.datetime.fromisoformat(start_time_iso.replace('Z', '+00:00'))
-                dt_buffered = dt_start - datetime.timedelta(seconds=5)
-                query_start_time = dt_buffered
-                logger.info(f"🔍 Querying database for records created since buffered_start_time={query_start_time} (original={start_time_iso})")
+                query_start_time = dt_start - datetime.timedelta(seconds=5)
+                logger.info(f"🔍 Buffered start_time={query_start_time} (original={start_time_iso})")
             except Exception as e:
                 logger.warning(f"Error parsing start_time_iso: {e}. Using raw start_time_iso.")
                 query_start_time = start_time_iso
         else:
             LIMIT = 30
-            logger.info(f"🔍 Querying database for last {LIMIT} MAX rows per sensor")
+            logger.info(f"🔍 Loading last {LIMIT} MAX rows per sensor")
 
-        # Check if local-only mode is enabled
-        if os.getenv('LOCAL_ONLY') == 'true':
-            logger.info("💾 [LOCAL-ONLY] Loading sensor data from local JSONL files in ./data/")
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            local_data_dir = os.path.join(base_dir, 'data')
+        logger.info(f"💾 [LOCAL] Loading sensor data from local JSONL files in {self.data_dir}")
+        
+        for sensor_type in ('acceleration', 'current', 'audio'):
+            file_path = os.path.join(self.data_dir, f"{sensor_type}.jsonl")
+            if not os.path.exists(file_path):
+                logger.warning(f"⚠️ Local file not found: {file_path}")
+                continue
             
-            for sensor_type, table_name in table_names.items():
-                file_path = os.path.join(local_data_dir, f"{table_name}.jsonl")
-                if not os.path.exists(file_path):
-                    logger.warning(f"⚠️ Local file not found: {file_path}")
-                    continue
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
                 
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                    
-                    rows = []
-                    for line in lines:
-                        if not line.strip():
-                            continue
-                        row = json.loads(line)
-                        if row.get('file_type') != 'max':
-                            continue
-                            
-                        # Parse time
-                        time_str = row.get('created_at') or row.get('timestamp')
-                        if not time_str:
-                            continue
+                rows = []
+                for line in lines:
+                    if not line.strip():
+                        continue
+                    row = json.loads(line)
+                    if row.get('file_type') != 'max':
+                        continue
+                        
+                    # Parse time
+                    time_str = row.get('created_at') or row.get('timestamp')
+                    if not time_str:
+                        continue
+                    try:
+                        dt = datetime.datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                    except Exception as te:
+                        logger.error(f"Error parsing timestamp {time_str}: {te}")
+                        continue
+                        
+                    # Filter by start_time if query_start_time is present
+                    target_dt = query_start_time
+                    if isinstance(target_dt, str):
                         try:
-                            dt = datetime.datetime.fromisoformat(time_str.replace('Z', '+00:00'))
-                        except Exception as te:
-                            logger.error(f"Error parsing timestamp {time_str}: {te}")
-                            continue
-                            
-                        # Filter by start_time if query_start_time is present
-                        target_dt = query_start_time
-                        if isinstance(target_dt, str):
-                            try:
-                                target_dt = datetime.datetime.fromisoformat(target_dt.replace('Z', '+00:00'))
-                            except:
-                                target_dt = None
+                            target_dt = datetime.datetime.fromisoformat(target_dt.replace('Z', '+00:00'))
+                        except:
+                            target_dt = None
+                    
+                    if target_dt:
+                        if dt.tzinfo is None and target_dt.tzinfo is not None:
+                            dt = dt.replace(tzinfo=datetime.timezone.utc)
+                        elif dt.tzinfo is not None and target_dt.tzinfo is None:
+                            target_dt = target_dt.replace(tzinfo=datetime.timezone.utc)
                         
-                        if target_dt:
-                            if dt.tzinfo is None and target_dt.tzinfo is not None:
-                                dt = dt.replace(tzinfo=datetime.timezone.utc)
-                            elif dt.tzinfo is not None and target_dt.tzinfo is None:
-                                target_dt = target_dt.replace(tzinfo=datetime.timezone.utc)
-                            
-                            if dt < target_dt:
-                                continue
-                        
-                        std_dev_val = row.get('standard_deviation') if row.get('standard_deviation') is not None else 0.0
-                        feature_data = {
-                            'timestamp': dt.timestamp() * 1000,
-                            'min': row.get('x_min', 0.0),
-                            'max': row.get('x_max', 0.0),
-                            'mean': row.get('mean', 0.0),
-                            'std_dev': std_dev_val,
-                            'range': row.get('range', 0.0),
-                            'variance': std_dev_val ** 2,
-                            'skewness': row.get('skewness', 0.0),
-                            'kurtosis': row.get('kurtosis', 0.0),
-                            'rms': row.get('rms', 0.0),
-                            'peak': row.get('peak', 0.0),
-                            'crest_factor': row.get('crest_factor', 0.0),
-                            'load_factor': row.get('load_factor', 1.0),
-                            'frequency1': row.get('frequency1', 0.0),
-                            'frequency2': row.get('frequency2', 0.0),
-                            'frequency3': row.get('frequency3', 0.0),
-                            'frequency4': row.get('frequency4', 0.0),
-                            'frequency5': row.get('frequency5', 0.0),
-                            'amplitude1': row.get('amplitude1', 0.0),
-                            'amplitude2': row.get('amplitude2', 0.0),
-                            'amplitude3': row.get('amplitude3', 0.0),
-                            'amplitude4': row.get('amplitude4', 0.0),
-                            'amplitude5': row.get('amplitude5', 0.0),
-                        }
-                        rows.append(feature_data)
-                    
-                    rows.sort(key=lambda x: x['timestamp'])
-                    
-                    if not query_start_time:
-                        limit_val = LIMIT if 'LIMIT' in locals() else 30
-                        rows = rows[-limit_val:]
-                        
-                    sensor_data[sensor_type] = rows
-                    logger.info(f"✓ Loaded {len(sensor_data[sensor_type])} {sensor_type} records from local file")
-                except Exception as file_err:
-                    logger.error(f"Error loading local data for {sensor_type}: {file_err}")
-            
-            return sensor_data
-
-        try:
-            conn = get_connection()
-            cur = conn.cursor()
-
-            for sensor_type, table_name in table_names.items():
-                try:
-                    if query_start_time:
-                        query = f"""
-                            SELECT
-                                x_min, x_max, mean, standard_deviation, range,
-                                skewness, kurtosis,
-                                frequency1, frequency2, frequency3, frequency4, frequency5,
-                                amplitude1, amplitude2, amplitude3, amplitude4, amplitude5,
-                                created_at, file_type, {table_name}_id,
-                                rms, peak, crest_factor, load_factor
-                            FROM {table_name}
-                            WHERE file_type = 'max' AND created_at >= %s
-                            ORDER BY created_at ASC, {table_name}_id ASC
-                        """
-                        logger.debug(f"Executing filtered query since {query_start_time} for {sensor_type}")
-                        cur.execute(query, (query_start_time,))
-                    else:
-                        query = f"""
-                            SELECT * FROM (
-                                SELECT
-                                    x_min, x_max, mean, standard_deviation, range,
-                                    skewness, kurtosis,
-                                    frequency1, frequency2, frequency3, frequency4, frequency5,
-                                    amplitude1, amplitude2, amplitude3, amplitude4, amplitude5,
-                                    created_at, file_type, {table_name}_id,
-                                    rms, peak, crest_factor, load_factor
-                                FROM {table_name}
-                                WHERE file_type = 'max'
-                                ORDER BY created_at DESC, {table_name}_id DESC
-                                LIMIT %s
-                            ) sub
-                            ORDER BY created_at ASC, {table_name}_id ASC
-                        """
-                        logger.debug(f"Executing fallback query for {sensor_type}")
-                        cur.execute(query, (LIMIT,))
-                    rows = cur.fetchall()
-                    
-                    logger.info(f"✓ Query returned {len(rows)} {sensor_type} records from database")
-                    
-                    if not rows:
-                        logger.warning(f"⚠️ No data found for {sensor_type} in last 24 hours")
-                    
-                    for row in rows:
-                        try:
-                            created_at = row[17]  # created_at column
-                            if created_at:
-                                timestamp_ms = created_at.timestamp() * 1000
-                            else:
-                                timestamp_ms = 0
-                                logger.warning(f"Null timestamp found for {sensor_type}")
-                                
-                            std_dev_val = row[3] if row[3] is not None else 0.0
-                            feature_data = {
-                                'timestamp': timestamp_ms,
-                                'min': row[0],           # x_min
-                                'max': row[1],           # x_max
-                                'mean': row[2],          # mean
-                                'std_dev': std_dev_val,  # standard_deviation
-                                'range': row[4],         # range
-                                'variance': std_dev_val ** 2,  # variance calculated from std_dev
-                                'skewness': row[5],      # skewness
-                                'kurtosis': row[6],      # kurtosis
-                                'rms': row[20] if len(row) > 20 and row[20] is not None else 0.0,
-                                'peak': row[21] if len(row) > 21 and row[21] is not None else 0.0,
-                                'crest_factor': row[22] if len(row) > 22 and row[22] is not None else 0.0,
-                                'load_factor': row[23] if len(row) > 23 and row[23] is not None else 1.0,
-                                'frequency1': row[7],
-                                'frequency2': row[8],
-                                'frequency3': row[9],
-                                'frequency4': row[10],
-                                'frequency5': row[11],
-                                'amplitude1': row[12],
-                                'amplitude2': row[13],
-                                'amplitude3': row[14],
-                                'amplitude4': row[15],
-                                'amplitude5': row[16],
-                            }
-                            sensor_data[sensor_type].append(feature_data)
-                        except Exception as row_error:
-                            logger.error(f"Error processing row for {sensor_type}: {row_error}")
+                        if dt < target_dt:
                             continue
                     
-                    logger.info(f"✓ Loaded {len(sensor_data[sensor_type])} {sensor_type} records (mapped to feature dict)")
+                    std_dev_val = row.get('standard_deviation') if row.get('standard_deviation') is not None else 0.0
+                    feature_data = {
+                        'timestamp': dt.timestamp() * 1000,
+                        'min': row.get('x_min', 0.0),
+                        'max': row.get('x_max', 0.0),
+                        'mean': row.get('mean', 0.0),
+                        'std_dev': std_dev_val,
+                        'range': row.get('range', 0.0),
+                        'variance': std_dev_val ** 2,
+                        'skewness': row.get('skewness', 0.0),
+                        'kurtosis': row.get('kurtosis', 0.0),
+                        'rms': row.get('rms', 0.0),
+                        'peak': row.get('peak', 0.0),
+                        'crest_factor': row.get('crest_factor', 0.0),
+                        'load_factor': row.get('load_factor', 1.0),
+                        'frequency1': row.get('frequency1', 0.0),
+                        'frequency2': row.get('frequency2', 0.0),
+                        'frequency3': row.get('frequency3', 0.0),
+                        'frequency4': row.get('frequency4', 0.0),
+                        'frequency5': row.get('frequency5', 0.0),
+                        'amplitude1': row.get('amplitude1', 0.0),
+                        'amplitude2': row.get('amplitude2', 0.0),
+                        'amplitude3': row.get('amplitude3', 0.0),
+                        'amplitude4': row.get('amplitude4', 0.0),
+                        'amplitude5': row.get('amplitude5', 0.0),
+                    }
+                    rows.append(feature_data)
+                
+                rows.sort(key=lambda x: x['timestamp'])
+                
+                if not query_start_time:
+                    rows = rows[-LIMIT:]
                     
-                except Exception as e:
-                    logger.error(f"❌ Error loading {sensor_type} data from database: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-                    sensor_data[sensor_type] = []
-                    continue
-            
-            conn.close()
-            logger.info(f"📊 Total loaded - acceleration: {len(sensor_data['acceleration'])}, current: {len(sensor_data['current'])}, audio: {len(sensor_data['audio'])}")
-            
-        except Exception as e:
-            logger.error(f"❌ Database connection error: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            raise
+                sensor_data[sensor_type] = rows
+                logger.info(f"✓ Loaded {len(sensor_data[sensor_type])} {sensor_type} records from local file")
+            except Exception as file_err:
+                logger.error(f"Error loading local data for {sensor_type}: {file_err}")
         
         return sensor_data
     
@@ -817,39 +733,41 @@ class EventManager:
         for sensor_type, trends in multi_sensor_trends.items():
             print(f"  {sensor_type}: {len(trends)} data points extracted")
 
-        # ==================== INSERT TO NEON DATABASE ====================
-        try:
-            db_result = insert_event_data(event_name, multi_sensor_trends)
-            fault_id = db_result['fault_id']
-            total_rows_inserted = db_result['total_rows_inserted']
-            rows_per_sensor = db_result['rows_per_sensor']
+        # ==================== PROCESS LOCALLY (NO DATABASE) ====================
+        # Determine the next fault ID
+        local_fault_id = self.get_next_fault_id_local(event_name)
+        
+        # Compute row statistics
+        total_rows_inserted = 0
+        rows_per_sensor = {}
+        for sensor_type, trend_data in multi_sensor_trends.items():
+            rows_per_sensor[sensor_type] = len(trend_data)
+            total_rows_inserted += len(trend_data)
             
-            if os.getenv('LOCAL_ONLY') == 'true':
-                print(f"\n[SUCCESS] Event saved to local storage files!")
-            else:
-                print(f"\n[SUCCESS] Event saved to Neon database!")
-            print(f"  Fault ID: {fault_id}")
-            print(f"  Total Rows Inserted: {total_rows_inserted}")
-            for sensor_type, count in rows_per_sensor.items():
-                print(f"    - {sensor_type}: {count} rows")
-            
-        except Exception as e:
-            print(f"[ERROR] Error saving to database: {e}")
-            raise
+        print(f"\n[SUCCESS] Event processed locally!")
+        print(f"  Fault ID: {local_fault_id}")
+        print(f"  Total Rows: {total_rows_inserted}")
+        for sensor_type, count in rows_per_sensor.items():
+            print(f"    - {sensor_type}: {count} rows")
 
-        # ==================== SAVE METADATA JSON FOR REFERENCE (LOCAL ONLY) ====================
+        # ==================== SAVE LOCAL EVENT FILES ====================
         event_name_safe = event_name.replace(' ', '_').replace('/', '-')
         failure_date_str = failure_dt.strftime('%Y%m%d_%H%M%S')
         event_id = f"{event_name_safe}_{failure_date_str}"
         
-        json_filename = f"{event_id}.json"
-        json_path = os.path.join(self.events_dir, json_filename)
+        # Create correct fault name directory under self.events_dir
+        event_dir = os.path.join(self.events_dir, event_name)
+        os.makedirs(event_dir, exist_ok=True)
+        
+        json_path = os.path.join(event_dir, f"{event_id}.json")
+        jsonl_path = os.path.join(event_dir, f"{event_id}.jsonl")
+        trend_path = os.path.join(event_dir, f"{event_id}_trend.jsonl")
         
         # Calculate metadata
         accel_trends = multi_sensor_trends.get('acceleration', [])
         time_before_failure = abs(accel_trends[0]['time_delta']) if accel_trends else 0
         
-        # Compute stats for each sensor (including the primary feature stats, Flaw 9)
+        # Compute stats for each sensor (including the primary feature stats)
         sensor_stats = {}
         event_key = (event_name or '').lower()
         PRIMARY_FEATURE = {
@@ -902,24 +820,81 @@ class EventManager:
             'actual_data_time_iso': datetime.datetime.fromtimestamp(failure_time_ms / 1000).isoformat(),
             'time_before_failure_seconds': time_before_failure,
             'total_data_points_all_sensors': total_rows_inserted,
-            'fault_id_in_database': fault_id,
+            'total_data_points': total_rows_inserted,
+            'fault_id_in_database': local_fault_id,
+            'fault_id': local_fault_id,
             'rows_per_sensor': rows_per_sensor,
             'sensor_statistics': sensor_stats,
             'created_at': datetime.datetime.now().isoformat()
         }
         
-        # Try to write metadata JSON (optional, for local development reference only)
+        # Save metadata JSON file
         try:
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, indent=2)
-        except (PermissionError, OSError):
-            # On Render or if no write permissions, skip - data is in database anyway
-            print(f"   [INFO] Metadata JSON not saved to file (database has all data)")
+        except Exception as e:
+            print(f"⚠️ Metadata JSON not saved to file: {e}")
+
+        # Save metadata JSONL file (single line)
+        try:
+            with open(jsonl_path, 'w', encoding='utf-8') as f:
+                f.write(json.dumps(metadata) + '\n')
+        except Exception as e:
+            print(f"⚠️ Metadata JSONL not saved to file: {e}")
+            
+        # Save trend data JSONL file
+        try:
+            with open(trend_path, 'w', encoding='utf-8') as f:
+                for s_type, s_trends in multi_sensor_trends.items():
+                    for pt in s_trends:
+                        # Construct a unified trend row dict
+                        pt_row = {
+                            'fault_id': local_fault_id,
+                            'sensor_type': s_type,
+                            'timestamp': pt['timestamp'],
+                            'timestamp_iso': datetime.datetime.fromtimestamp(pt['timestamp'] / 1000, tz=datetime.timezone.utc).isoformat(),
+                            'x_min': pt.get('min', 0.0),
+                            'x_max': pt.get('max', 0.0),
+                            'mean': pt.get('mean', 0.0),
+                            'standard_deviation': pt.get('std_dev', 0.0),
+                            'std_dev': pt.get('std_dev', 0.0),
+                            'min': pt.get('min', 0.0),
+                            'max': pt.get('max', 0.0),
+                            'range': pt.get('range', 0.0),
+                            'variance': pt.get('variance', 0.0),
+                            'skewness': pt.get('skewness', 0.0),
+                            'kurtosis': pt.get('kurtosis', 0.0),
+                            'mean_slope': pt.get('mean_slope', 0.0),
+                            'kurtosis_slope': pt.get('kurtosis_slope', 0.0),
+                            'std_dev_slope': pt.get('std_dev_slope', 0.0),
+                            'fault_frequency_match': pt.get('fault_frequency_match', 0.0),
+                            'interval_phase': pt.get('interval_phase', 'pre_failure'),
+                            'rms': pt.get('rms', 0.0),
+                            'peak': pt.get('peak', 0.0),
+                            'crest_factor': pt.get('crest_factor', 0.0),
+                            'load_factor': pt.get('load_factor', 1.0),
+                            'rms_slope': pt.get('rms_slope', 0.0),
+                            'peak_slope': pt.get('peak_slope', 0.0),
+                            'crest_factor_slope': pt.get('crest_factor_slope', 0.0),
+                            'frequency1': pt.get('frequency1', 0.0),
+                            'frequency2': pt.get('frequency2', 0.0),
+                            'frequency3': pt.get('frequency3', 0.0),
+                            'frequency4': pt.get('frequency4', 0.0),
+                            'frequency5': pt.get('frequency5', 0.0),
+                            'amplitude1': pt.get('amplitude1', 0.0),
+                            'amplitude2': pt.get('amplitude2', 0.0),
+                            'amplitude3': pt.get('amplitude3', 0.0),
+                            'amplitude4': pt.get('amplitude4', 0.0),
+                            'amplitude5': pt.get('amplitude5', 0.0)
+                        }
+                        f.write(json.dumps(pt_row) + '\n')
+        except Exception as e:
+            print(f"⚠️ Trend JSONL not saved to file: {e}")
         
         return {
             'success': True,
             'event_id': event_id,
-            'fault_id': fault_id,
+            'fault_id': local_fault_id,
             'total_rows_inserted': total_rows_inserted,
             'rows_per_sensor': rows_per_sensor,
             'metadata': metadata,
@@ -941,21 +916,20 @@ class EventManager:
             return events
         
         try:
-            filenames = os.listdir(self.events_dir)
+            for root, dirs, files in os.walk(self.events_dir):
+                for filename in files:
+                    if filename.endswith('.json') and filename not in ('stats.json', 'metadata.json'):
+                        json_path = os.path.join(root, filename)
+                        try:
+                            with open(json_path, 'r', encoding='utf-8') as f:
+                                metadata = json.load(f)
+                                events.append(metadata)
+                        except Exception as e:
+                            print(f"Error reading event metadata {filename}: {e}")
+                            continue
         except OSError as e:
             print(f"⚠️ Could not list events directory: {e}")
             return events
-        
-        for filename in filenames:
-            if filename.endswith('.json'):
-                json_path = os.path.join(self.events_dir, filename)
-                try:
-                    with open(json_path, 'r', encoding='utf-8') as f:
-                        metadata = json.load(f)
-                        events.append(metadata)
-                except Exception as e:
-                    print(f"Error reading event metadata {filename}: {e}")
-                    continue
         
         # Sort by creation time (newest first)
         events.sort(key=lambda x: x.get('created_at', ''), reverse=True)
@@ -963,11 +937,10 @@ class EventManager:
     
     def get_event(self, event_id: str) -> Optional[Dict]:
         """
-        Get detailed data for a specific event.
+        Get detailed data for a specific event locally.
 
         Reads the metadata JSON (written locally at event creation time) and
-        queries trend rows from the fault-specific database table using the
-        fault_id stored in that metadata.  CSV files are no longer used.
+        loads trend details from the local trend .jsonl file.
 
         Args:
             event_id: Event identifier (e.g. "Motor_Stall_20260613_125401")
@@ -976,86 +949,44 @@ class EventManager:
             Dict with 'metadata' and 'trend_data' (list of per-sensor rows),
             or None if the metadata JSON is not found.
         """
-        from database import get_connection, FAILURE_TABLE_MAPPING
-
-        json_path = os.path.join(self.events_dir, f"{event_id}.json")
-        if not os.path.exists(json_path):
+        json_path = None
+        # Try finding directly in self.events_dir
+        direct_path = os.path.join(self.events_dir, f"{event_id}.json")
+        if os.path.exists(direct_path):
+            json_path = direct_path
+        else:
+            # Search in subdirectories
+            for root, dirs, files in os.walk(self.events_dir):
+                if f"{event_id}.json" in files:
+                    json_path = os.path.join(root, f"{event_id}.json")
+                    break
+                    
+        if not json_path:
             return None
 
-        with open(json_path, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
-
-        fault_id   = metadata.get('fault_id_in_database')
-        event_name = metadata.get('event_name')
-        table_name = FAILURE_TABLE_MAPPING.get(event_name) if event_name else None
-
-        if fault_id is None or table_name is None:
-            # Metadata exists but we cannot map to a table - return metadata only
-            return {'metadata': metadata, 'trend_data': []}
-
         try:
-            conn = get_connection()
-            cur  = conn.cursor()
-            cur.execute(
-                f"""
-                SELECT sensor_type, timestamp,
-                       mean, x_max, x_min, standard_deviation,
-                       range, variance, skewness, kurtosis,
-                       frequency1, frequency2, frequency3, frequency4, frequency5,
-                       amplitude1, amplitude2, amplitude3, amplitude4, amplitude5
-                FROM {table_name}
-                WHERE fault_id = %s
-                ORDER BY sensor_type, timestamp
-                """,
-                (fault_id,)
-            )
-            rows = cur.fetchall()
-            conn.close()
-
-            def _f(v):
-                """Safe float conversion."""
-                try:
-                    return float(v) if v is not None else 0.0
-                except (TypeError, ValueError):
-                    return 0.0
-
-            trend_data = []
-            for row in rows:
-                ts_raw = row[1]
-                ts_ms  = (ts_raw.timestamp() * 1000
-                          if hasattr(ts_raw, 'timestamp') else _f(ts_raw))
-                trend_data.append({
-                    'sensor_type': row[0],
-                    'timestamp':   ts_ms,
-                    'mean':        _f(row[2]),
-                    'max':         _f(row[3]),
-                    'min':         _f(row[4]),
-                    'std_dev':     _f(row[5]),
-                    'range':       _f(row[6]),
-                    'variance':    _f(row[7]),
-                    'skewness':    _f(row[8]),
-                    'kurtosis':    _f(row[9]),
-                    'frequency1':  _f(row[10]),
-                    'frequency2':  _f(row[11]),
-                    'frequency3':  _f(row[12]),
-                    'frequency4':  _f(row[13]),
-                    'frequency5':  _f(row[14]),
-                    'amplitude1':  _f(row[15]),
-                    'amplitude2':  _f(row[16]),
-                    'amplitude3':  _f(row[17]),
-                    'amplitude4':  _f(row[18]),
-                    'amplitude5':  _f(row[19]),
-                })
-
-            return {'metadata': metadata, 'trend_data': trend_data}
-
+            with open(json_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(
-                "get_event DB query failed for fault_id=%s table=%s: %s",
-                fault_id, table_name, e
-            )
-            return {'metadata': metadata, 'trend_data': [], 'error': str(e)}
+            return {'metadata': None, 'trend_data': [], 'error': f"Failed to load metadata: {e}"}
+
+        # Trend data is in {event_id}_trend.jsonl in the same folder as the json file
+        parent_dir = os.path.dirname(json_path)
+        trend_path = os.path.join(parent_dir, f"{event_id}_trend.jsonl")
+        
+        trend_data = []
+        if os.path.exists(trend_path):
+            try:
+                with open(trend_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip():
+                            trend_data.append(json.loads(line))
+                # Sort by sensor_type, timestamp
+                trend_data.sort(key=lambda x: (x.get('sensor_type', ''), x.get('timestamp', 0)))
+            except Exception as e:
+                return {'metadata': metadata, 'trend_data': [], 'error': f"Failed to load trend data: {e}"}
+                
+        return {'metadata': metadata, 'trend_data': trend_data}
     
     def get_unique_event_names(self) -> List[str]:
         """

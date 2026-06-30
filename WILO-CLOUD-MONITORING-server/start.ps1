@@ -6,7 +6,7 @@ Write-Host ""
 
 # Start backend in a new terminal window
 Write-Host "Starting Backend (Flask) on port 5001..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot'; python app.py"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\..'; & 'C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe' app.py"
 
 # Wait a moment for backend to initialize
 Start-Sleep -Seconds 2
