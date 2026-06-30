@@ -1027,8 +1027,8 @@ function AnomalyDetectionPanel({ anomalyResult, loading }) {
 function App() {
   // State management (unchanged)
   const [sensorData, setSensorData] = useState({});
-  const [selectedSensor, setSelectedSensor] = useState('current');
-  const [timeSeriesSensor, setTimeSeriesSensor] = useState('current');
+  const [selectedSensor, setSelectedSensor] = useState('acceleration');
+  const [timeSeriesSensor, setTimeSeriesSensor] = useState('acceleration');
   const [mode, setMode] = useState('max');
   const [selectedParam, setSelectedParam] = useState('mean');
   const [loading, setLoading] = useState(true);

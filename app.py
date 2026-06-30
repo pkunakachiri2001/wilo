@@ -846,6 +846,117 @@ def upload_files():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# ── /api/upload-rpi-file ───────────────────────────────────────────────────────
+@app.route('/api/upload-rpi-file', methods=['POST'])
+def upload_rpi_file():
+    """Receive a single CSV file from the RPi (containing Time (s) and Az (m/s2) columns).
+    
+    Processes the file to extract statistics and FFT, then saves to Data/acceleration.jsonl
+    and Data/acceleration_datapoints.jsonl so the dashboard can display it immediately.
+    """
+    try:
+        filename = request.args.get('filename')
+        if not filename:
+            return jsonify({'error': 'Missing filename parameter'}), 400
+
+        clean_name = os.path.basename(filename)
+
+        # 1. Read the raw body (CSV data)
+        raw_data = request.get_data()
+        if not raw_data:
+            return jsonify({'error': 'Empty file data'}), 400
+
+        # Parse the CSV from memory
+        content = raw_data.decode('utf-8', errors='ignore')
+        lines = content.strip().split('\n')
+        if len(lines) < 2:
+            return jsonify({'error': 'No data rows in CSV'}), 400
+
+        header = lines[0].split(',')
+        time_idx = val_idx = None
+        for i, col in enumerate(header):
+            cl = col.strip().lower()
+            # Support standard format (timestamp/value) and ESP32 format (Time (s)/Az (m/s2))
+            if cl in ('time (s)', 'timestamp'):
+                time_idx = i
+            elif cl in ('az (m/s2)', 'value'):
+                val_idx = i
+
+        if time_idx is None or val_idx is None:
+            return jsonify({'error': f'Header missing time or acceleration columns. Found: {header}'}), 400
+
+        timestamps = []
+        values = []
+
+        # Convert Time (s) to absolute milliseconds timestamps for chart compatibility.
+        # The ESP32 provides relative seconds (e.g. 0.0000, 0.0100...).
+        now_ts = time.time() * 1000  # current time in ms
+
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            parts = line.split(',')
+            if len(parts) <= max(time_idx, val_idx):
+                continue
+            try:
+                t_sec = float(parts[time_idx].strip())
+                val = float(parts[val_idx].strip())
+                timestamps.append(now_ts + (t_sec * 1000))
+                values.append(val)
+            except (ValueError, IndexError):
+                continue
+
+        if not values:
+            return jsonify({'error': 'No valid data points parsed'}), 400
+
+        # 2. Compute statistics and FFT for acceleration
+        load_factor = 1.0  # default
+        stats_val = calculate_statistics(values, load_factor=load_factor)
+        freqs, amps = calculate_fft_analysis(values)
+
+        row = {
+            'x_min': stats_val['min'],
+            'x_max': stats_val['max'],
+            'mean': stats_val['mean'],
+            'standard_deviation': stats_val['std_dev'],
+            'range': stats_val['range'],
+            'skewness': stats_val['skewness'],
+            'kurtosis': stats_val['kurtosis'],
+            'rms': stats_val.get('rms', 0.0),
+            'peak': stats_val.get('peak', 0.0),
+            'crest_factor': stats_val.get('crest_factor', 0.0),
+            'load_factor': stats_val.get('load_factor', 1.0),
+            **{f'frequency{i+1}': freqs[i] for i in range(5)},
+            **{f'amplitude{i+1}': amps[i] for i in range(5)},
+        }
+
+        # Save to acceleration JSONL database for both 'max', 'min', and 'combined' modes
+        now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+
+        for mode in ['max', 'min', 'combined']:
+            _append_stats_to_jsonl('acceleration', mode, row.copy())
+            _append_datapoints_to_jsonl('acceleration', mode, timestamps, values, now_iso)
+
+        # Log confirmation in upload history
+        log_file = os.path.join(UPLOAD_LOG_DIR, 'upload_history.log')
+        with open(log_file, 'a') as f:
+            log_record = {
+                'timestamp': now_iso,
+                'filename': clean_name,
+                'sensor': 'acceleration',
+                'rows': len(values),
+                'status': 'success'
+            }
+            f.write(repr(log_record) + '\n')
+
+        logger.info(f"✓ Processed and saved RPi file: {clean_name} ({len(values)} points)")
+        return jsonify({'status': 'success', 'message': f'Processed RPi file {clean_name}'}), 201
+
+    except Exception as e:
+        logger.error(f"RPi file processing failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ── /events ───────────────────────────────────────────────────────────────────
 @app.route('/events')
 def list_events():
