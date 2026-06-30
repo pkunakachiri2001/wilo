@@ -45,7 +45,7 @@ ChartJS.register(
 // Determine API base URL - always use Render for backend, frontend runs locally
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:5001'
-  : 'https://wilo-cloud-monitoring.onrender.com';
+  : window.location.origin;
 
 const SENSORS = ['acceleration', 'current', 'audio'];
 const MODES = [
