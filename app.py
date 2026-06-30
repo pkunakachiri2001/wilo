@@ -775,7 +775,7 @@ def get_anomaly_score():
 # ── /api/upload ───────────────────────────────────────────────────────────────
 @app.route('/api/upload', methods=['POST'])
 def upload_files():
-    """Receive CSV uploads, validate, compute stats, append to local JSONL files."""
+    """Receive CSV uploads (either a batch of 2 max/min files, or a single real-time sensor file)."""
     try:
         # Authentication
         api_key = request.headers.get('X-API-Key')
@@ -788,11 +788,116 @@ def upload_files():
             return jsonify({'error': 'No files provided'}), 400
 
         uploaded_files = request.files.getlist('files')
-        if len(uploaded_files) != UPLOAD_BATCH_SIZE:
-            return jsonify({'error': f'Expected {UPLOAD_BATCH_SIZE} files, got {len(uploaded_files)}'}), 400
+        if not uploaded_files:
+            return jsonify({'error': 'No files found in request'}), 400
 
         validation_report = []
-        upload_timestamp  = dt.datetime.now().isoformat()
+        upload_timestamp = dt.datetime.now().isoformat()
+
+        # CASE 1: Single file upload (real-time stream)
+        if len(uploaded_files) == 1:
+            file = uploaded_files[0]
+            if not file or not file.filename.endswith('.csv'):
+                return jsonify({'error': f'Invalid file format: {file.filename}'}), 400
+
+            file.seek(0, os.SEEK_END)
+            fsize = file.tell()
+            file.seek(0)
+            if fsize > MAX_FILE_SIZE:
+                return jsonify({'error': f'File too large: {file.filename}'}), 413
+
+            # Parse the CSV from memory
+            content = file.read().decode('utf-8', errors='ignore')
+            lines = content.strip().split('\n')
+            if len(lines) < 2:
+                return jsonify({'error': 'No data rows in CSV'}), 400
+
+            header = lines[0].split(',')
+            time_idx = val_idx = None
+            for i, col in enumerate(header):
+                cl = col.strip().lower()
+                if cl in ('time (s)', 'timestamp'):
+                    time_idx = i
+                elif cl in ('az (m/s2)', 'value'):
+                    val_idx = i
+
+            if time_idx is None or val_idx is None:
+                return jsonify({'error': f'Header missing time or value columns. Found: {header}'}), 400
+
+            timestamps = []
+            values = []
+            now_ts = time.time() * 1000  # current time in ms
+
+            for line in lines[1:]:
+                if not line.strip():
+                    continue
+                parts = line.split(',')
+                if len(parts) <= max(time_idx, val_idx):
+                    continue
+                try:
+                    t_sec = float(parts[time_idx].strip())
+                    val = float(parts[val_idx].strip())
+                    # Convert to absolute ms timestamps
+                    timestamps.append(now_ts + (t_sec * 1000))
+                    values.append(val)
+                except (ValueError, IndexError):
+                    continue
+
+            if not values:
+                return jsonify({'error': 'No valid data points parsed'}), 400
+
+            # Calculate stats and FFT for acceleration
+            stats_val = calculate_statistics(values, load_factor=1.0)
+            freqs, amps = calculate_fft_analysis(values)
+
+            row = {
+                'x_min': stats_val['min'],
+                'x_max': stats_val['max'],
+                'mean': stats_val['mean'],
+                'standard_deviation': stats_val['std_dev'],
+                'range': stats_val['range'],
+                'skewness': stats_val['skewness'],
+                'kurtosis': stats_val['kurtosis'],
+                'rms': stats_val.get('rms', 0.0),
+                'peak': stats_val.get('peak', 0.0),
+                'crest_factor': stats_val.get('crest_factor', 0.0),
+                'load_factor': stats_val.get('load_factor', 1.0),
+                **{f'frequency{i+1}': freqs[i] for i in range(5)},
+                **{f'amplitude{i+1}': amps[i] for i in range(5)},
+            }
+
+            now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+
+            # Save to acceleration JSONL database for all modes
+            for mode in ['max', 'min', 'combined']:
+                _append_stats_to_jsonl('acceleration', mode, row.copy())
+                _append_datapoints_to_jsonl('acceleration', mode, timestamps, values, now_iso)
+
+            # Log to upload history
+            log_file = os.path.join(UPLOAD_LOG_DIR, 'upload_history.log')
+            with open(log_file, 'a') as f:
+                log_record = {
+                    'timestamp': now_iso,
+                    'filename': file.filename,
+                    'sensor': 'acceleration',
+                    'rows': len(values),
+                    'status': 'success'
+                }
+                f.write(repr(log_record) + '\n')
+
+            logger.info(f"✓ Processed single sensor file: {file.filename} ({len(values)} points)")
+            return jsonify({
+                'status': 'success',
+                'message': f'Processed single file {file.filename} and saved locally',
+                'sensor_id': sensor_id,
+                'files': [file.filename],
+                'timestamp': upload_timestamp,
+                'local_records_saved': 3,
+            }), 201
+
+        # CASE 2: Original batch upload of 2 files (max and min)
+        if len(uploaded_files) != UPLOAD_BATCH_SIZE:
+            return jsonify({'error': f'Expected {UPLOAD_BATCH_SIZE} files, got {len(uploaded_files)}'}), 400
 
         for file in uploaded_files:
             if not file or not file.filename.endswith('.csv'):
@@ -827,8 +932,6 @@ def upload_files():
         except Exception as e:
             logger.error(f"Local save failed: {e}")
             return jsonify({'error': f'Failed to save locally: {e}'}), 500
-
-
 
         return jsonify({
             'status':   'success',
